@@ -3,7 +3,8 @@ import { useParams, useSearchParams, useLocation, useNavigate, Link } from 'reac
 import { useSocket } from '../context/SocketContext';
 import Custom360Player from '../components/Custom360Player';
 import MapPanel from '../components/MapPanel';
-import { ArrowLeft, Crown, Share2, LogIn, Upload, Video, Film, Globe, Map } from 'lucide-react';
+import VideoCallPanel from '../components/VideoCallPanel';
+import { ArrowLeft, Crown, Share2, Upload, Video, Film, Globe, Map, Phone } from 'lucide-react';
 import { getVideoUrl, getVideoListFromCameraApi, uploadVideo, getGPSData, getGPSDataFromUrl, interpolateGPSPosition } from '../utils/video';
 
 const HEARTBEAT_INTERVAL_MS = 3000;
@@ -25,7 +26,6 @@ export default function Room() {
   const [remoteTime, setRemoteTime] = useState(0);
   const [remotePlaying, setRemotePlaying] = useState(false);
   const [urlInput, setUrlInput] = useState('');
-  const [joinNameInput, setJoinNameInput] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const [mapCenter, setMapCenter] = useState({ lat: 40.758, lng: -73.9855 });
   const [mapZoom, setMapZoom] = useState(16);
@@ -37,8 +37,15 @@ export default function Room() {
   const [currentPosition, setCurrentPosition] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState('videos'); // 'videos' | 'map'
+  const [rightPanelTab, setRightPanelTab] = useState('videos'); // 'videos' | 'map' | 'videoCall'
   const [localTime, setLocalTime] = useState(0); // Track admin's local video time
+
+  // Non-admins don't have Videos tab; default to Map
+  useEffect(() => {
+    if (joined && !isAdmin && rightPanelTab === 'videos') {
+      setRightPanelTab('map');
+    }
+  }, [joined, isAdmin, rightPanelTab]);
 
   const playerRef = useRef(null);
   const heartbeatRef = useRef(null);
@@ -365,12 +372,6 @@ export default function Room() {
     }
   };
 
-  const handleJoinMeeting = (e) => {
-    e.preventDefault();
-    const name = joinNameInput.trim() || 'Viewer';
-    setDisplayName(name);
-  };
-
   const shareLink = typeof window !== 'undefined' ? `${window.location.origin}/room/${roomId}` : '';
   const copyShareLink = () => {
     navigator.clipboard.writeText(shareLink).then(() => {
@@ -391,31 +392,27 @@ export default function Room() {
     );
   }
 
+  // No name yet: show Jitsi as the single join flow. Joining Jitsi will auto-join the video room.
   if (!joined && !displayName) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-cinema-black">
-        <div className="w-full max-w-sm">
-          <h2 className="text-xl font-semibold text-center mb-2">Join this meeting</h2>
-          <p className="text-cinema-muted text-center text-sm mb-6">
-            Enter your name to join the room.
-          </p>
-          <form onSubmit={handleJoinMeeting} className="space-y-4">
-            <input
-              type="text"
-              value={joinNameInput}
-              onChange={(e) => setJoinNameInput(e.target.value)}
-              placeholder="Your name"
-              className="w-full px-4 py-3 rounded-lg bg-cinema-dark border border-cinema-border text-white placeholder-cinema-muted focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500"
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors"
-            >
-              <LogIn className="w-5 h-5" />
-              Join meeting
-            </button>
-          </form>
+      <div className="min-h-screen flex flex-col bg-cinema-black">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-cinema-border bg-cinema-dark shrink-0">
+          <Link
+            to="/"
+            className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
+            aria-label="Back to home"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <span className="text-cinema-muted font-mono text-sm">Room: {roomId}</span>
+          <span className="text-cinema-muted text-sm">Join the video call to participate</span>
+        </div>
+        <div className="flex-1 min-h-0">
+          <VideoCallPanel
+            roomId={roomId}
+            displayName=""
+            onJitsiJoined={(name) => setDisplayName(name || 'Guest')}
+          />
         </div>
       </div>
     );
@@ -519,9 +516,9 @@ export default function Room() {
             </div>
           </div>
           <div className="basis-[30%] border-l border-cinema-border bg-cinema-panel flex flex-col min-h-0 min-w-0">
-            {/* Tabs: Video library (admin only) | Map */}
-            {isAdmin ? (
-              <div className="flex border-b border-cinema-border shrink-0">
+            {/* Tabs: Video library (admin only) | Map | Video Call */}
+            <div className="flex border-b border-cinema-border shrink-0">
+              {isAdmin && (
                 <button
                   type="button"
                   onClick={() => setRightPanelTab('videos')}
@@ -534,27 +531,32 @@ export default function Room() {
                   <Film className="w-4 h-4" />
                   Videos
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setRightPanelTab('map')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-                    rightPanelTab === 'map'
-                      ? 'bg-cinema-dark text-white border-b-2 border-red-500'
-                      : 'text-cinema-muted hover:text-white hover:bg-cinema-dark/50'
-                  }`}
-                >
-                  <Map className="w-4 h-4" />
-                  Map
-                </button>
-              </div>
-            ) : (
-              <div className="flex border-b border-cinema-border shrink-0">
-                <div className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium bg-cinema-dark text-white border-b-2 border-red-500">
-                  <Map className="w-4 h-4" />
-                  Map
-                </div>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={() => setRightPanelTab('map')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                  rightPanelTab === 'map'
+                    ? 'bg-cinema-dark text-white border-b-2 border-red-500'
+                    : 'text-cinema-muted hover:text-white hover:bg-cinema-dark/50'
+                }`}
+              >
+                <Map className="w-4 h-4" />
+                Map
+              </button>
+              <button
+                type="button"
+                onClick={() => setRightPanelTab('videoCall')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                  rightPanelTab === 'videoCall'
+                    ? 'bg-cinema-dark text-white border-b-2 border-red-500'
+                    : 'text-cinema-muted hover:text-white hover:bg-cinema-dark/50'
+                }`}
+              >
+                <Phone className="w-4 h-4" />
+                Video Call
+              </button>
+            </div>
 
             {isAdmin && rightPanelTab === 'videos' && (
               <div className="flex-1 overflow-y-auto p-3">
@@ -625,7 +627,13 @@ export default function Room() {
               </div>
             )}
 
-            {(rightPanelTab === 'map' || !isAdmin) && (
+            {rightPanelTab === 'videoCall' && (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <VideoCallPanel roomId={roomId} displayName={userName} />
+              </div>
+            )}
+
+            {rightPanelTab === 'map' && (
               <div className="flex-1 min-h-0 flex flex-col">
                 <MapPanel
                   center={mapCenter}

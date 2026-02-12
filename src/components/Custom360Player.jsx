@@ -76,6 +76,7 @@ const Custom360Player = forwardRef(function Custom360Player(
     videoElement.style.height = '100%';
     videoElement.setAttribute('playsinline', '');
     videoElement.setAttribute('crossorigin', 'anonymous');
+    videoElement.setAttribute('muted', '');
 
     videoContainerRef.current.appendChild(videoElement);
 
@@ -85,6 +86,7 @@ const Custom360Player = forwardRef(function Custom360Player(
       preload: 'auto',
       aspectRatio: '16:9',
       techOrder: ['html5'],
+      muted: true,
     });
 
     playerRef.current = player;

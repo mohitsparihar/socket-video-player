@@ -304,7 +304,6 @@ export default function MapPanel({
         },
         title: 'Current Position',
         zIndex: 1000,
-        animation: window.google.maps.Animation.DROP,
       });
       console.log('Created current position marker');
     } else {
