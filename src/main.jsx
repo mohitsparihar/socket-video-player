@@ -6,6 +6,7 @@ import './index.css';
 import Root from './routes/Root';
 import Home from './routes/Home';
 import Room from './routes/Room';
+import Videos from './routes/Videos';
 
 const router = createBrowserRouter([
   {
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Home /> },
+      { path: 'videos', element: <Videos /> },
       { path: 'room/:roomId', element: <Room /> },
     ],
   },

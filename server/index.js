@@ -2,10 +2,32 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import videosRouter from './routes/videos.js';
+import env from './config/env.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 // Allow Vite dev (localhost + network IP) and production origin
 app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+app.use('/api/videos', videosRouter);
+
+// Serve static files in production
+if (env.NODE_ENV === 'production' || env.NODE_ENV === 'staging') {
+  const distPath = join(__dirname, '..', 'dist');
+  app.use(express.static(distPath));
+
+  // Handle SPA routing - send all non-API requests to index.html
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(join(distPath, 'index.html'));
+    }
+  });
+}
 
 const httpServer = createServer(app);
 
@@ -13,7 +35,7 @@ const io = new Server(httpServer, {
   cors: { origin: true, credentials: true },
 });
 
-// roomId -> { adminId, users, videoId?, currentTime?, isPlaying?, mapCenter?, mapZoom?, spherical? }
+// roomId -> { adminId, users, videoId?, currentTime?, isPlaying?, mapCenter?, mapZoom?, spherical?, cameraVideo?, gpsData? }
 const rooms = new Map();
 
 function getOrCreateRoom(roomId) {
@@ -27,6 +49,8 @@ function getOrCreateRoom(roomId) {
       mapCenter: { lat: 40.758, lng: -73.9855 },
       mapZoom: 13,
       spherical: null,
+      cameraVideo: null,
+      gpsData: null,
     });
   }
   return rooms.get(roomId);
@@ -60,6 +84,8 @@ io.on('connection', (socket) => {
       mapCenter: room.mapCenter,
       mapZoom: room.mapZoom,
       spherical: room.spherical,
+      cameraVideo: room.cameraVideo,
+      gpsData: room.gpsData,
     });
 
     io.to(roomId).emit('users-update', {
@@ -68,11 +94,17 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('set-video', ({ roomId, videoId }) => {
+  socket.on('set-video', ({ roomId, videoId, cameraVideo, gpsData }) => {
     const room = rooms.get(roomId);
     if (!room || room.adminId !== socket.id) return;
     room.videoId = videoId;
-    io.to(roomId).emit('video-changed', { videoId });
+    room.cameraVideo = cameraVideo || null;
+    room.gpsData = gpsData || null;
+    io.to(roomId).emit('video-changed', {
+      videoId,
+      cameraVideo: room.cameraVideo,
+      gpsData: room.gpsData
+    });
   });
 
   socket.on('play', ({ roomId, currentTime }) => {
@@ -128,6 +160,13 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('map-update', { mapCenter: room.mapCenter, mapZoom: room.mapZoom });
   });
 
+  socket.on('gps-data-update', ({ roomId, gpsData }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.adminId !== socket.id) return;
+    room.gpsData = gpsData;
+    socket.to(roomId).emit('gps-data-update', { gpsData });
+  });
+
   socket.on('disconnect', () => {
     const roomId = socket.roomId;
     if (!roomId) return;
@@ -154,7 +193,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Socket.io server running on http://localhost:${PORT}`);
+const PORT = env.PORT;
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Socket.io server running on port ${PORT} (${env.NODE_ENV})`);
 });

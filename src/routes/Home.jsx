@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
-import { Film, Plus } from 'lucide-react';
+import { useNavigate, Link } from 'react-router';
+import { Film, Plus, Video } from 'lucide-react';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -23,6 +23,14 @@ export default function Home() {
         <p className="text-cinema-muted text-center mb-8">
           Create a room, then share the link. Others join with their name—no Room ID needed.
         </p>
+
+        <Link
+          to="/videos"
+          className="flex items-center justify-center gap-2 w-full py-3 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-silver hover:text-white hover:border-cinema-muted transition-colors mb-6"
+        >
+          <Video className="w-5 h-5" />
+          Browse video library
+        </Link>
 
         <form onSubmit={handleCreateRoom} className="space-y-4">
           <div>

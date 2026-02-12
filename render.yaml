@@ -1,0 +1,14 @@
+services:
+  # Web Service (serves both frontend and backend)
+  - type: web
+    name: video-player
+    env: node
+    region: oregon
+    plan: free
+    branch: master
+    buildCommand: npm install && npm run build:production
+    startCommand: npm run start:production
+    envVars:
+      - key: NODE_ENV
+        value: production
+    # Render will automatically detect and serve the built Vite app from dist/

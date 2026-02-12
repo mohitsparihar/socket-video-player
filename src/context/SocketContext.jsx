@@ -7,11 +7,12 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    // Connect directly to Socket.io server (avoids Vite proxy EPIPE errors on disconnect)
+    // Use VITE_API_URL from environment or fallback to smart defaults
     const url =
-      import.meta.env.DEV
+      import.meta.env.VITE_API_URL ||
+      (import.meta.env.DEV
         ? `${window.location.protocol}//${window.location.hostname}:3001`
-        : window.location.origin;
+        : window.location.origin);
     const s = io(url, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
