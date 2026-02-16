@@ -7,7 +7,6 @@
 /.vite
 
 # Environment files
-.env
 # Keep environment-specific files tracked so they can be deployed
 # .env.local
 # .env.staging
