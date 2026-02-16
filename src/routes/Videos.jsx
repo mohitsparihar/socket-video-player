@@ -41,21 +41,21 @@ export default function Videos() {
   };
 
   return (
-    <div className="min-h-screen bg-cinema-black text-white">
-      <header className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-cinema-border bg-cinema-dark/95 backdrop-blur">
+    <div className="min-h-screen bg-light-bg text-light-text">
+      <header className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-light-border bg-white/95 backdrop-blur">
         <div className="flex items-center gap-3">
-        <Link
-          to="/room/retailiq-meet"
-          className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
-          aria-label="Back to room"
-        >
+          <Link
+            to="/room/retailiq-meet"
+            className="p-2 rounded-lg text-light-muted hover:text-light-text hover:bg-light-surface transition-colors"
+            aria-label="Back to room"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h1 className="text-xl font-semibold">Video library</h1>
         </div>
         <Link
           to="/room/retailiq-meet"
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-light-purple hover:bg-light-purple-hover text-white text-sm font-medium transition-colors"
         >
           <Film className="w-4 h-4" />
           Join room
@@ -64,7 +64,7 @@ export default function Videos() {
 
       <main className="p-6 max-w-6xl mx-auto">
         {loading && (
-          <div className="flex items-center justify-center py-20 text-cinema-muted">
+          <div className="flex items-center justify-center py-20 text-light-muted">
             Loading videos…
           </div>
         )}
@@ -74,7 +74,7 @@ export default function Videos() {
           </div>
         )}
         {!loading && !error && videos.length === 0 && (
-          <div className="text-center py-20 text-cinema-muted">
+          <div className="text-center py-20 text-light-muted">
             <Film className="w-16 h-16 mx-auto mb-4 opacity-50" />
             <p>No videos yet. Upload from a room or add files to the server.</p>
           </div>
@@ -84,10 +84,10 @@ export default function Videos() {
             {videos.map((video) => (
               <article
                 key={video.id}
-                className="rounded-xl border border-cinema-border bg-cinema-panel overflow-hidden hover:border-cinema-muted transition-colors"
+                className="rounded-xl border border-light-border bg-white overflow-hidden hover:border-light-muted transition-colors"
               >
-                <div className="aspect-video bg-cinema-dark flex items-center justify-center relative">
-                  <Film className="w-16 h-16 text-cinema-muted/50" />
+                <div className="aspect-video bg-light-surface flex items-center justify-center relative">
+                  <Film className="w-16 h-16 text-light-muted/50" />
                   {video.is360 && (
                     <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded bg-amber-500/20 text-amber-400 text-xs font-medium">
                       <Globe className="w-3 h-3" />
@@ -96,17 +96,17 @@ export default function Videos() {
                   )}
                 </div>
                 <div className="p-4">
-                  <p className="text-sm text-cinema-silver font-mono truncate" title={video.filename}>
+                  <p className="text-sm text-light-text font-mono truncate" title={video.filename}>
                     {video.filename}
                   </p>
                   {video.hasGPS && (
-                    <span className="inline-block mt-1 text-xs text-cinema-muted">📍 GPS</span>
+                    <span className="inline-block mt-1 text-xs text-light-muted">📍 GPS</span>
                   )}
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       type="button"
                       onClick={(e) => playInRoom(video, e)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-light-purple hover:bg-light-purple-hover text-white text-sm font-medium transition-colors"
                     >
                       <Play className="w-4 h-4" />
                       Play in room

@@ -28,8 +28,8 @@ export default function Room() {
   const [remotePlaying, setRemotePlaying] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
-  const [mapCenter, setMapCenter] = useState({ lat: 40.758, lng: -73.9855 });
-  const [mapZoom, setMapZoom] = useState(16);
+  const [mapCenter, setMapCenter] = useState({ lat: 20.5937, lng: 78.9629 });
+  const [mapZoom, setMapZoom] = useState(5);
   const [remoteSpherical, setRemoteSpherical] = useState(null);
 
   // New states for custom video player
@@ -108,8 +108,19 @@ export default function Room() {
       setVideoId(data.videoId || null);
       setRemoteTime(data.currentTime ?? 0);
       setRemotePlaying(data.isPlaying ?? false);
-      if (data.mapCenter) setMapCenter(data.mapCenter);
-      if (Number.isFinite(data.mapZoom)) setMapZoom(data.mapZoom);
+      const isOldDefaultCenter = data.mapCenter && Math.abs(data.mapCenter.lat - 40.758) < 0.001 && Math.abs(data.mapCenter.lng - -73.9855) < 0.001;
+
+      if (data.mapCenter && !isOldDefaultCenter) {
+        setMapCenter(data.mapCenter);
+      }
+
+      if (Number.isFinite(data.mapZoom)) {
+        // HACK: If server sends old default zoom (13) with old default center, ignore it
+        if (!(isOldDefaultCenter && data.mapZoom === 13)) {
+          setMapZoom(data.mapZoom);
+        }
+      }
+
       if (data.spherical && Object.keys(data.spherical).length > 0) setRemoteSpherical(data.spherical);
       if (data.cameraVideo) setCameraVideo(data.cameraVideo);
       if (data.gpsData) setGpsData(data.gpsData);
@@ -255,7 +266,10 @@ export default function Room() {
       setVideoId(initialVideoIdFromUrl);
       getGPSDataFromUrl(video.gps_json_url).then((data) => {
         setGpsData(data);
-        if (data?.gpsData?.length) setMapCenter({ lat: data.gpsData[0].lat, lng: data.gpsData[0].lng });
+        if (data?.gpsData?.length) {
+          setMapCenter({ lat: data.gpsData[0].lat, lng: data.gpsData[0].lng });
+          setMapZoom(16); // Auto-zoom to street level
+        }
         socket.emit('set-video', {
           roomId,
           videoId: initialVideoIdFromUrl,
@@ -315,6 +329,7 @@ export default function Room() {
       if (data?.gpsData?.length) {
         const first = data.gpsData[0];
         setMapCenter({ lat: first.lat, lng: first.lng });
+        setMapZoom(16); // Auto-zoom to street level
       }
       // Broadcast camera video and GPS data to room
       socket.emit('set-video', {
@@ -328,6 +343,9 @@ export default function Room() {
       setVideoId(selectedVideoId);
       setUrlInput('');
       const data = await loadGPSData(selectedVideoId);
+      if (data?.gpsData?.length) {
+        setMapZoom(16); // Auto-zoom to street level
+      }
       // Broadcast GPS data to room
       socket.emit('set-video', {
         roomId,
@@ -344,6 +362,7 @@ export default function Room() {
     if (data?.gpsData?.length) {
       const first = data.gpsData[0];
       setMapCenter({ lat: first.lat, lng: first.lng });
+      setMapZoom(16); // Auto-zoom to street level
     }
     return data;
   };
@@ -377,8 +396,8 @@ export default function Room() {
     socket === undefined ? 'loading' : socket === null ? 'connecting' : 'ready';
   if (socketStatus !== 'ready') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-cinema-black">
-        <div className="text-cinema-muted">
+      <div className="min-h-screen flex items-center justify-center bg-light-bg">
+        <div className="text-light-muted">
           {socketStatus === 'loading' ? 'Loading...' : 'Connecting...'}
         </div>
       </div>
@@ -387,27 +406,27 @@ export default function Room() {
 
   // Single layout that keeps VideoCallPanel mounted throughout - prevents iframe remounting
   return (
-    <div className="flex h-screen bg-cinema-black overflow-hidden">
+    <div className="flex h-screen bg-light-bg overflow-hidden">
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-cinema-border bg-cinema-dark shrink-0">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-light-border bg-white shrink-0">
           <div className="flex items-center gap-3">
             <Link
               to={joined ? "/" : "/room/retailiq-meet"}
-              className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
+              className="p-2 rounded-lg text-light-muted hover:text-light-text hover:bg-light-surface transition-colors"
               aria-label={joined ? "Back to home" : "Back"}
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <span className="text-cinema-muted font-mono text-sm">Room: {roomId}</span>
+            <span className="text-light-muted font-mono text-sm">Room: {roomId}</span>
             {!joined && displayName && (
-              <span className="text-cinema-muted text-sm">Joining room…</span>
+              <span className="text-light-muted text-sm">Joining room…</span>
             )}
             {joined && isAdmin && (
               <>
                 <button
                   type="button"
                   onClick={copyShareLink}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-silver hover:text-white hover:border-cinema-muted transition-colors text-sm"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-light-border text-light-text hover:bg-light-surface transition-colors text-sm"
                   title="Copy join link"
                 >
                   <Share2 className="w-4 h-4" />
@@ -425,7 +444,7 @@ export default function Room() {
               <button
                 type="button"
                 onClick={handleTogglePanel}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-cinema-border text-cinema-silver hover:text-white hover:border-cinema-muted transition-colors text-sm"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-light-border text-light-text hover:bg-light-surface transition-colors text-sm"
                 title={showSidebar ? 'Hide video & map panel' : 'Show video & map panel'}
               >
                 {showSidebar ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
@@ -455,12 +474,12 @@ export default function Room() {
 
           {/* Overlay: video (70%) + map (30%) - covers Jitsi area - only shown when joined */}
           {joined && showSidebar && (
-            <div className="absolute inset-0 z-20 flex flex-col bg-cinema-black">
+            <div className="absolute inset-0 z-20 flex flex-col bg-white">
               {/* Header with close */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-cinema-border shrink-0 bg-cinema-dark">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-light-border shrink-0 bg-light-surface">
                 <div className="flex items-center gap-2">
-                  <Film className="w-4 h-4 text-cinema-muted" />
-                  <span className="text-sm font-medium text-white">Shared 360° video</span>
+                  <Film className="w-4 h-4 text-light-muted" />
+                  <span className="text-sm font-medium text-light-text">Shared 360° video</span>
                   {videoSharingEnabled && (
                     <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-medium">
                       Live
@@ -471,7 +490,7 @@ export default function Room() {
                   <button
                     type="button"
                     onClick={handleTogglePanel}
-                    className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
+                    className="p-2 rounded-lg text-light-muted hover:text-light-text hover:bg-light-surface transition-colors"
                     title="Close overlay"
                   >
                     <X className="w-5 h-5" />
@@ -482,15 +501,15 @@ export default function Room() {
               {/* 70% video | 30% map */}
               <div className="flex-1 min-h-0 flex overflow-hidden">
                 {/* Video section - 70% */}
-                <section className="w-[70%] min-w-0 flex flex-col overflow-hidden border-r border-cinema-border">
+                <section className="w-[70%] min-w-0 flex flex-col overflow-hidden border-r border-light-border">
                   {videoSharingEnabled ? (
                     <>
-                      <div className="flex items-center gap-2 px-4 py-3 border-b border-cinema-border shrink-0">
+                      <div className="flex items-center gap-2 px-4 py-3 border-b border-light-border shrink-0">
                         {isAdmin ? (
                           <select
                             value={videoId || ''}
                             onChange={(e) => handleSetVideo(e.target.value)}
-                            className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                            className="flex-1 px-3 py-2 rounded-lg bg-white border border-light-border text-light-text text-sm focus:outline-none focus:ring-2 focus:ring-light-purple/50"
                           >
                             <option value="">Select a 360° video...</option>
                             {videoList.map((video) => (
@@ -500,7 +519,7 @@ export default function Room() {
                             ))}
                           </select>
                         ) : (
-                          <span className="text-cinema-silver text-sm">
+                          <span className="text-light-muted text-sm">
                             {videoId ? `Watching: ${videoId}` : 'Waiting for host to select video...'}
                           </span>
                         )}
@@ -526,7 +545,7 @@ export default function Room() {
                           syncThresholdSec={SYNC_THRESHOLD_SEC}
                         />
                         {!videoId && (
-                          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-cinema-muted text-sm">
+                          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-light-muted text-sm">
                             {isAdmin ? (
                               <p>Select a 360° video from the dropdown above to start.</p>
                             ) : (
@@ -537,7 +556,7 @@ export default function Room() {
                       </div>
                     </>
                   ) : (
-                    <div className="flex-1 flex items-center justify-center px-4 text-center text-cinema-muted text-sm">
+                    <div className="flex-1 flex items-center justify-center px-4 text-center text-light-muted text-sm">
                       {isAdmin
                         ? 'Enable video sharing from the top bar to start a shared 360° video.'
                         : 'Waiting for the host to enable video sharing.'}
@@ -546,10 +565,10 @@ export default function Room() {
                 </section>
 
                 {/* Map section - 30% */}
-                <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-cinema-panel">
-                  <div className="flex items-center gap-2 px-4 py-2 border-b border-cinema-border shrink-0">
-                    <Map className="w-4 h-4 text-cinema-muted" />
-                    <span className="text-sm font-medium text-white">Map</span>
+                <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-light-panel">
+                  <div className="flex items-center gap-2 px-4 py-2 border-b border-light-border shrink-0">
+                    <Map className="w-4 h-4 text-light-muted" />
+                    <span className="text-sm font-medium text-light-text">Map</span>
                   </div>
                   <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
                     <MapPanel

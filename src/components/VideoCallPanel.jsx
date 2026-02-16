@@ -57,10 +57,10 @@ export default function VideoCallPanel({ roomId, displayName, onJitsiJoined, onJ
   }), [displayName]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: displayName ? 0 : 400, background: '#0a0a0a', pointerEvents: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: displayName ? 0 : 400, background: '#ffffff', pointerEvents: 'auto' }}>
       {showHeader && !isPreJoin && (
-        <div style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid #2a2a2a', flexShrink: 0 }}>
-          <p style={{ fontSize: '0.875rem', color: '#737373', margin: 0 }}>
+        <div style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid #dee2e6', flexShrink: 0 }}>
+          <p style={{ fontSize: '0.875rem', color: '#6c757d', margin: 0 }}>
             Video call with room participants · Room: {jitsiRoomName}
           </p>
         </div>

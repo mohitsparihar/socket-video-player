@@ -1,9 +1,10 @@
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Locate } from 'lucide-react';
 
 export default function MapPanel({
-  center = { lat: 40.758, lng: -73.9855 },
-  zoom = 13,
+  center = { lat: 20.5937, lng: 78.9629 },
+  zoom = 5,
   isAdmin = false,
   onUpdate,
   gpsData = null,
@@ -13,6 +14,8 @@ export default function MapPanel({
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const lastSentRef = useRef({ center, zoom });
+  const isProgrammaticRef = useRef(false);
+  const [isAutoCentering, setIsAutoCentering] = useState(true);
   const [mapError, setMapError] = useState(null);
   const [mapReady, setMapReady] = useState(false);
 
@@ -25,7 +28,6 @@ export default function MapPanel({
   const loadMaps = useCallback(async () => {
     if (!apiKey) return null;
     setMapError(null);
-    // Loader expects "key" and "v", not "apiKey" / "version"
     setOptions({ key: apiKey, v: 'weekly' });
     try {
       if (!mapsLibRef.current) {
@@ -57,38 +59,50 @@ export default function MapPanel({
         });
         mapInstanceRef.current = map;
 
-      if (!isAdmin) {
-        map.setOptions({
-          gestureHandling: 'none',
-          keyboardShortcuts: false,
-          draggable: false,
-          zoomControl: false,
+        // Detect user interaction to stop auto-centering
+        map.addListener('dragstart', () => {
+          setIsAutoCentering(false);
         });
-      }
 
-      if (isAdmin) {
-        map.addListener('idle', () => {
-          const c = map.getCenter();
-          const z = map.getZoom();
-          if (!c || typeof z !== 'number') return;
-          const next = { lat: c.lat(), lng: c.lng() };
-          const last = lastSentRef.current;
-          const moved =
-            Math.abs(last.center.lat - next.lat) > 0.00001 ||
-            Math.abs(last.center.lng - next.lng) > 0.00001 ||
-            last.zoom !== z;
-          if (moved) {
-            lastSentRef.current = { center: next, zoom: z };
-            onUpdate?.({ mapCenter: next, mapZoom: z });
+        // Detect manual zoom
+        map.addListener('zoom_changed', () => {
+          if (!isProgrammaticRef.current) {
+            setIsAutoCentering(false);
           }
         });
-      }
 
-      // Signal that map is ready
-      if (isMounted) {
-        setMapReady(true);
-        console.log('Map is ready!');
-      }
+        if (!isAdmin) {
+          map.setOptions({
+            gestureHandling: 'none',
+            keyboardShortcuts: false,
+            draggable: false,
+            zoomControl: false,
+          });
+        }
+
+        if (isAdmin) {
+          map.addListener('idle', () => {
+            const c = map.getCenter();
+            const z = map.getZoom();
+            if (!c || typeof z !== 'number') return;
+            const next = { lat: c.lat(), lng: c.lng() };
+            const last = lastSentRef.current;
+            const moved =
+              Math.abs(last.center.lat - next.lat) > 0.00001 ||
+              Math.abs(last.center.lng - next.lng) > 0.00001 ||
+              last.zoom !== z;
+
+            if (moved) {
+              lastSentRef.current = { center: next, zoom: z };
+              onUpdate?.({ mapCenter: next, mapZoom: z });
+            }
+          });
+        }
+
+        if (isMounted) {
+          setMapReady(true);
+          console.log('Map is ready!');
+        }
       } catch (err) {
         if (isMounted) setMapError(err?.message || 'Failed to create map');
       }
@@ -99,7 +113,7 @@ export default function MapPanel({
     };
   }, [apiKey, isAdmin, onUpdate, center, zoom, loadMaps]);
 
-  // When the map container gets or changes size, trigger resize so the map paints (fixes black map when container had 0 size at init)
+  // Resize Effect
   useEffect(() => {
     const el = mapRef.current;
     const map = mapInstanceRef.current;
@@ -107,31 +121,42 @@ export default function MapPanel({
     const triggerResize = () => {
       try {
         map.resize();
-      } catch (_) {}
+      } catch (_) { }
     };
     const ro = new ResizeObserver(triggerResize);
     ro.observe(el);
-    triggerResize(); // initial paint in case container already has size
+    triggerResize();
     return () => ro.disconnect();
   }, [mapReady]);
 
+  // Center/Zoom Effect
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
+
+    if (!isAutoCentering) return;
+
+    // Zoom
+    if (map.getZoom() !== zoom) {
+      isProgrammaticRef.current = true;
+      map.setZoom(zoom);
+      setTimeout(() => { isProgrammaticRef.current = false; }, 0);
+    }
+
+    // Center
     const current = map.getCenter();
     if (
       !current ||
       Math.abs(current.lat() - center.lat) > 0.00001 ||
       Math.abs(current.lng() - center.lng) > 0.00001
     ) {
+      isProgrammaticRef.current = true;
       map.setCenter(center);
+      setTimeout(() => { isProgrammaticRef.current = false; }, 0);
     }
-    if (map.getZoom() !== zoom) {
-      map.setZoom(zoom);
-    }
-  }, [center, zoom]);
+  }, [center, zoom, isAutoCentering]);
 
-  // Draw GPS path and markers
+  // GPS Path Effect
   useEffect(() => {
     if (!mapReady) {
       console.log('GPS effect: waiting for map to be ready');
@@ -151,11 +176,9 @@ export default function MapPanel({
 
     console.log('Drawing GPS data:', gpsData);
 
-    // Clear existing GPS markers
     gpsMarkersRef.current.forEach(marker => marker.setMap(null));
     gpsMarkersRef.current = [];
 
-    // Clear existing polylines
     if (traveledPathRef.current) {
       traveledPathRef.current.setMap(null);
       traveledPathRef.current = null;
@@ -171,17 +194,12 @@ export default function MapPanel({
       return;
     }
 
-    console.log(`Drawing ${points.length} GPS points`);
-
-    // Create path coordinates
     const pathCoordinates = points.map(p => ({ lat: p.lat, lng: p.lng }));
 
-    // Calculate bounds to fit all GPS points
     if (window.google?.maps?.LatLngBounds) {
       const bounds = new window.google.maps.LatLngBounds();
       pathCoordinates.forEach(coord => bounds.extend(coord));
 
-      // Fit map to show all GPS points with some padding
       map.fitBounds(bounds, {
         top: 50,
         right: 50,
@@ -189,18 +207,14 @@ export default function MapPanel({
         left: 50,
       });
 
-      // Optionally set a max zoom level so it doesn't zoom in too much for very small paths
       window.google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
         const currentZoom = map.getZoom();
         if (currentZoom > 18) {
           map.setZoom(18);
         }
       });
-
-      console.log('Map bounds adjusted to fit GPS path');
     }
 
-    // Initially draw entire path as gray (future path)
     if (window.google?.maps?.Polyline) {
       futurePathRef.current = new window.google.maps.Polyline({
         path: pathCoordinates,
@@ -210,12 +224,8 @@ export default function MapPanel({
         strokeWeight: 3,
         map: map,
       });
-      console.log('Initial path created (gray)');
-    } else {
-      console.error('Polyline class not found');
     }
 
-    // Add small markers for each GPS point using global google.maps
     if (window.google?.maps?.Marker) {
       points.forEach((point, index) => {
         const timeInSeconds = point.timestamp ?? (point.timeMs ? point.timeMs / 1000 : 0);
@@ -234,9 +244,6 @@ export default function MapPanel({
         });
         gpsMarkersRef.current.push(marker);
       });
-      console.log(`Created ${gpsMarkersRef.current.length} markers`);
-    } else {
-      console.error('Marker class not found');
     }
 
     return () => {
@@ -253,43 +260,21 @@ export default function MapPanel({
     };
   }, [gpsData, mapReady]);
 
-  // Update current position marker and path coloring
+  // Current Position Effect
   useEffect(() => {
-    if (!mapReady) {
-      console.log('Current position effect: waiting for map to be ready');
-      return;
-    }
-
+    if (!mapReady) return;
     const map = mapInstanceRef.current;
-
-    // If no current position, clean up marker but keep map
     if (!currentPosition) {
       if (currentMarkerRef.current) {
         currentMarkerRef.current.setMap(null);
         currentMarkerRef.current = null;
-        console.log('Cleaned up current position marker (no position)');
       }
       return;
     }
+    if (!map || !mapsLibRef.current) return;
 
-    if (!map || !mapsLibRef.current) {
-      console.log('Current position effect early return:', {
-        hasMap: !!map,
-        hasPosition: !!currentPosition,
-        hasLibs: !!mapsLibRef.current,
-        currentPosition
-      });
-      return;
-    }
+    if (!window.google?.maps?.Marker) return;
 
-    console.log('Updating current position marker:', currentPosition);
-
-    if (!window.google?.maps?.Marker) {
-      console.error('Marker class not found for current position');
-      return;
-    }
-
-    // Create or update current position marker
     if (!currentMarkerRef.current) {
       currentMarkerRef.current = new window.google.maps.Marker({
         position: currentPosition,
@@ -321,22 +306,14 @@ export default function MapPanel({
         title: 'Current Position',
         zIndex: 1000,
       });
-      console.log('Created current position marker');
     } else {
       currentMarkerRef.current.setPosition(currentPosition);
-      console.log('Updated current position marker position');
     }
 
-    // Update path coloring based on current position
     if (gpsData?.gpsData && window.google?.maps?.Polyline) {
       const points = gpsData.gpsData;
-
-      // Find current timestamp - currentPosition has lat/lng, need to find corresponding timestamp
-      // We'll use the current position to split the path
-      let splitIndex = 0;
       let minDistance = Infinity;
-
-      // Find the GPS point closest to current position
+      let splitIndex = 0;
       points.forEach((point, index) => {
         const distance = Math.sqrt(
           Math.pow(point.lat - currentPosition.lat, 2) +
@@ -348,15 +325,12 @@ export default function MapPanel({
         }
       });
 
-      // Create traveled path (red) - from start to current position
       const traveledCoords = points.slice(0, splitIndex + 1).map(p => ({ lat: p.lat, lng: p.lng }));
-      traveledCoords.push(currentPosition); // Add current position for smooth transition
+      traveledCoords.push(currentPosition);
 
-      // Create future path (gray) - from current position to end
-      const futureCoords = [currentPosition]; // Start with current position
+      const futureCoords = [currentPosition];
       futureCoords.push(...points.slice(splitIndex + 1).map(p => ({ lat: p.lat, lng: p.lng })));
 
-      // Update traveled path
       if (traveledPathRef.current) {
         traveledPathRef.current.setPath(traveledCoords);
       } else if (traveledCoords.length > 1) {
@@ -371,12 +345,9 @@ export default function MapPanel({
         });
       }
 
-      // Update future path
       if (futurePathRef.current) {
         futurePathRef.current.setPath(futureCoords);
       }
-
-      console.log(`Path split at point ${splitIndex}: traveled=${traveledCoords.length}, future=${futureCoords.length}`);
     }
 
     return () => {
@@ -390,8 +361,8 @@ export default function MapPanel({
   if (!apiKey) {
     return (
       <div className="flex-1 min-h-0 w-full p-3">
-        <div className="h-full w-full rounded-xl border border-cinema-border bg-cinema-dark flex items-center justify-center text-cinema-muted text-sm">
-          Add <code className="text-cinema-silver">VITE_GOOGLE_MAPS_API_KEY</code> to your <code className="text-cinema-silver">.env.local</code> and restart the dev server.
+        <div className="h-full w-full rounded-xl border border-light-border bg-light-surface flex items-center justify-center text-light-muted text-sm">
+          Add <code className="text-light-text">VITE_GOOGLE_MAPS_API_KEY</code> to your <code className="text-light-text">.env.local</code> and restart the dev server.
         </div>
       </div>
     );
@@ -400,10 +371,10 @@ export default function MapPanel({
   if (mapError) {
     return (
       <div className="flex-1 min-h-0 w-full p-3">
-        <div className="h-full w-full rounded-xl border border-cinema-border bg-cinema-dark flex flex-col items-center justify-center gap-2 p-4 text-center">
+        <div className="h-full w-full rounded-xl border border-light-border bg-light-surface flex flex-col items-center justify-center gap-2 p-4 text-center">
           <p className="text-red-400 text-sm font-medium">Map failed to load</p>
-          <p className="text-cinema-muted text-xs max-w-sm">{mapError}</p>
-          <p className="text-cinema-muted text-xs">Enable &quot;Maps JavaScript API&quot; and &quot;Geocoding API&quot; in Google Cloud Console, and allow your domain (e.g. localhost) in key restrictions.</p>
+          <p className="text-light-muted text-xs max-w-sm">{mapError}</p>
+          <p className="text-light-muted text-xs">Enable &quot;Maps JavaScript API&quot; and &quot;Geocoding API&quot; in Google Cloud Console, and allow your domain (e.g. localhost) in key restrictions.</p>
         </div>
       </div>
     );
@@ -411,8 +382,28 @@ export default function MapPanel({
 
   return (
     <div className="h-full min-h-0 w-full p-1 flex flex-col">
-      <div className="flex-1 min-h-0 w-full overflow-hidden rounded-xl border border-cinema-border bg-cinema-dark">
+      <div className="flex-1 min-h-0 w-full overflow-hidden rounded-xl border border-light-border bg-light-surface relative">
         <div ref={mapRef} className="h-full w-full min-h-[200px]" />
+
+        {currentPosition && !isAutoCentering && (
+          <button
+            type="button"
+            onClick={() => {
+              const map = mapInstanceRef.current;
+              if (map && currentPosition) {
+                map.setCenter(currentPosition);
+                map.setZoom(20);
+                setIsAutoCentering(true);
+                onUpdate?.({ mapCenter: currentPosition, mapZoom: 20 });
+              }
+            }}
+            className="absolute bottom-6 left-4 p-2 bg-white rounded-lg shadow-md border border-light-border text-light-text hover:bg-light-surface active:bg-gray-100 transition-colors z-10 flex items-center gap-2"
+            title="Recenter Map"
+          >
+            <Locate className="w-4 h-4 text-light-purple" />
+            <span className="text-xs font-medium hidden sm:inline">Recenter</span>
+          </button>
+        )}
       </div>
     </div>
   );

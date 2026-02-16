@@ -7,13 +7,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        cinema: {
-          black: '#0a0a0a',
-          dark: '#141414',
-          panel: '#1a1a1a',
-          border: '#2a2a2a',
-          muted: '#737373',
-          silver: '#a3a3a3',
+        light: {
+          bg: '#ffffff',
+          surface: '#f8f9fa',
+          panel: '#f1f3f5',
+          border: '#dee2e6',
+          text: '#212529',
+          muted: '#6c757d',
+          purple: {
+            DEFAULT: '#7c3aed',
+            hover: '#6d28d9',
+            light: '#ede9fe',
+          },
         },
       },
     },
