@@ -11,4 +11,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: VITE_API_URL
+        value: https://socket-video-player.onrender.com
     # Render will automatically detect and serve the built Vite app from dist/
