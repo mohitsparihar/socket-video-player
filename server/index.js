@@ -22,7 +22,7 @@ if (env.NODE_ENV === 'production' || env.NODE_ENV === 'staging') {
   app.use(express.static(distPath));
 
   // Handle SPA routing - send all non-API requests to index.html
-  app.get('*', (req, res) => {
+  app.get('/*path', (req, res) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(join(distPath, 'index.html'));
     }
