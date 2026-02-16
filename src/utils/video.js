@@ -1,7 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const CAMERA_UPLOADS_URL =
     import.meta.env.VITE_CAMERA_UPLOADS_URL ||
-    'https://beapis-in.staging.geoiq.ai/bdapp/stg/v1/bd/getCameraAppUploads';
+    'https://beapis-in.staging.geoiq.ai/bdapp/stg/v1/bd/getCameraAppUploadsForAccount';
 
 /**
  * Fetch video list from GeoIQ Camera App Uploads API (POST with Bearer token)
@@ -19,7 +19,7 @@ export async function getCameraAppUploads(accessToken) {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
         },
-        body: '',
+        body: JSON.stringify({}),
     });
     if (!response.ok) {
         const text = await response.text();
