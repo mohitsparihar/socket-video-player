@@ -319,7 +319,11 @@ export default function Room() {
     setRemoteTime(0);
     setLocalTime(0);
 
-    const video = videoList.find((v) => (v.id ?? v.videoId) === selectedVideoId);
+    // Convert selectedVideoId to match the type in videoList (handle string from select vs number from API)
+    const video = videoList.find((v) => {
+      const videoId = v.id ?? v.videoId;
+      return videoId == selectedVideoId; // Use loose equality to handle string/number mismatch
+    });
     if (video?.public_url) {
       setCameraVideo(video);
       setVideoId(selectedVideoId);
