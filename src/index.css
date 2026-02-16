@@ -30,3 +30,25 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* Ensure Video.js control bar stays visible above videojs-vr canvas */
+.video-js .vjs-control-bar {
+  z-index: 99999 !important;
+  position: relative;
+}
+
+.video-js .vjs-big-play-button {
+  z-index: 99999 !important;
+}
+
+/* Fit video within panel - scale to fit so video + controls stay visible */
+.video-js.vjs-fluid {
+  max-height: 100%;
+  height: 100% !important;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.video-js .vjs-tech {
+  object-fit: contain;
+}

@@ -42,6 +42,7 @@ const Custom360Player = forwardRef(function Custom360Player(
     videoUrl,
     isAdmin,
     is360 = true,
+    hideBigPlayButton = false,
     remoteTime,
     remotePlaying,
     remoteSpherical,
@@ -82,11 +83,17 @@ const Custom360Player = forwardRef(function Custom360Player(
 
     const player = videojs(videoElement, {
       controls: true,
-      fluid: false,
+      fluid: true,
       preload: 'auto',
       aspectRatio: '16:9',
       techOrder: ['html5'],
       muted: true,
+      controlBar: {
+        volumePanel: true,
+        progressControl: true,
+        playToggle: true,
+        fullscreenToggle: true,
+      },
     });
 
     playerRef.current = player;
@@ -101,6 +108,16 @@ const Custom360Player = forwardRef(function Custom360Player(
           });
         }
         setPlayerReady(true);
+        // Force control bar above videojs-vr canvas (runs after VR plugin may have added overlay)
+        const ensureControlsVisible = () => {
+          const root = player.el();
+          const controlBar = root?.querySelector('.vjs-control-bar');
+          const bigPlay = root?.querySelector('.vjs-big-play-button');
+          if (controlBar) controlBar.style.setProperty('z-index', '99999');
+          if (bigPlay) bigPlay.style.setProperty('z-index', '99999');
+        };
+        requestAnimationFrame(ensureControlsVisible);
+        setTimeout(ensureControlsVisible, 500); // Retry after VR plugin may have added canvas
       } catch (err) {
         console.error('Failed to init VR plugin:', err);
         setPlayerReady(true);
@@ -199,6 +216,19 @@ const Custom360Player = forwardRef(function Custom360Player(
     return () => clearInterval(t);
   }, [isAdmin, is360, remoteSpherical, playerReady]);
 
+  // Hide big play button when no video (e.g. hideBigPlayButton=true) to avoid accidental clicks
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || !playerReady) return;
+    const bigPlay = player.bigPlayButton;
+    if (!bigPlay) return;
+    if (hideBigPlayButton) {
+      bigPlay.hide();
+    } else {
+      bigPlay.show();
+    }
+  }, [playerReady, hideBigPlayButton]);
+
   // Admin: poll 360 view direction (OrbitControls theta/phi) and broadcast as yaw/pitch
   const lastSphericalEmittedRef = useRef(null);
   useEffect(() => {
@@ -223,13 +253,17 @@ const Custom360Player = forwardRef(function Custom360Player(
   }, [is360, isAdmin, onSphericalChange, playerReady]);
 
   return (
-    <div className="relative w-full h-[600px] rounded-xl overflow-hidden bg-black shadow-2xl">
-      <div ref={videoContainerRef} className="w-full h-full" />
+    <div className="relative w-full h-full min-h-[200px] rounded-xl overflow-visible bg-black shadow-2xl">
+      <div ref={videoContainerRef} className="w-full h-full min-h-0 flex flex-col" />
 
       {!isAdmin && (
         <div
-          className="absolute inset-0 z-50 cursor-not-allowed"
-          style={{ pointerEvents: isAdmin ? 'none' : 'all' }}
+          className="absolute inset-0 cursor-not-allowed"
+          style={{
+            pointerEvents: 'all',
+            zIndex: 10,
+            bottom: '40px' // Leave space for video.js controls at bottom
+          }}
           title="Only the host can control playback"
           aria-hidden="true"
         />

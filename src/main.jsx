@@ -1,10 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { SocketProvider } from './context/SocketContext';
 import './index.css';
 import Root from './routes/Root';
-import Home from './routes/Home';
 import Room from './routes/Room';
 import Videos from './routes/Videos';
 
@@ -17,7 +16,7 @@ const router = createBrowserRouter([
       </SocketProvider>
     ),
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <Navigate to="/room/retailiq-meet" replace /> },
       { path: 'videos', element: <Videos /> },
       { path: 'room/:roomId', element: <Room /> },
     ],
@@ -25,7 +24,5 @@ const router = createBrowserRouter([
 ]);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <RouterProvider router={router} />
-  </React.StrictMode>
+  <RouterProvider router={router} />
 );

@@ -29,8 +29,7 @@ export default function Videos() {
 
   const playInRoom = (video, e) => {
     e.preventDefault();
-    const roomId = crypto.randomUUID().slice(0, 8);
-    navigate(`/room/${roomId}?name=Host`, {
+    navigate(`/room/retailiq-meet?name=Host`, {
       state: {
         cameraVideo: {
           public_url: video.public_url,
@@ -45,21 +44,21 @@ export default function Videos() {
     <div className="min-h-screen bg-cinema-black text-white">
       <header className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-cinema-border bg-cinema-dark/95 backdrop-blur">
         <div className="flex items-center gap-3">
-          <Link
-            to="/"
-            className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
-            aria-label="Back to home"
-          >
+        <Link
+          to="/room/retailiq-meet"
+          className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
+          aria-label="Back to room"
+        >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h1 className="text-xl font-semibold">Video library</h1>
         </div>
         <Link
-          to="/"
+          to="/room/retailiq-meet"
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
         >
           <Film className="w-4 h-4" />
-          Create room
+          Join room
         </Link>
       </header>
 

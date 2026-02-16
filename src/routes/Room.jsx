@@ -4,8 +4,8 @@ import { useSocket } from '../context/SocketContext';
 import Custom360Player from '../components/Custom360Player';
 import MapPanel from '../components/MapPanel';
 import VideoCallPanel from '../components/VideoCallPanel';
-import { ArrowLeft, Crown, Share2, Upload, Video, Film, Globe, Map, Phone } from 'lucide-react';
-import { getVideoUrl, getVideoListFromCameraApi, uploadVideo, getGPSData, getGPSDataFromUrl, interpolateGPSPosition } from '../utils/video';
+import { ArrowLeft, Crown, Share2, Film, Map, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { getVideoUrl, getVideoListFromCameraApi, getGPSData, getGPSDataFromUrl, interpolateGPSPosition } from '../utils/video';
 
 const HEARTBEAT_INTERVAL_MS = 3000;
 const SYNC_THRESHOLD_SEC = 2;
@@ -19,6 +19,7 @@ export default function Room() {
   const socket = useSocket();
 
   const [displayName, setDisplayName] = useState(nameFromUrl);
+  const [jitsiJoined, setJitsiJoined] = useState(false);
   const [joined, setJoined] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [videoId, setVideoId] = useState(null);
@@ -35,17 +36,9 @@ export default function Room() {
   const [videoList, setVideoList] = useState([]);
   const [gpsData, setGpsData] = useState(null);
   const [currentPosition, setCurrentPosition] = useState(null);
-  const [showUpload, setShowUpload] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState('videos'); // 'videos' | 'map' | 'videoCall'
   const [localTime, setLocalTime] = useState(0); // Track admin's local video time
-
-  // Non-admins don't have Videos tab; default to Map
-  useEffect(() => {
-    if (joined && !isAdmin && rightPanelTab === 'videos') {
-      setRightPanelTab('map');
-    }
-  }, [joined, isAdmin, rightPanelTab]);
+  const [videoSharingEnabled, setVideoSharingEnabled] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   const playerRef = useRef(null);
   const heartbeatRef = useRef(null);
@@ -105,7 +98,7 @@ export default function Room() {
 
 
   useEffect(() => {
-    if (!socket || !roomId || !displayName) return;
+    if (!socket || !roomId || !displayName || !jitsiJoined) return;
 
     socket.emit('join-room', { roomId, userName: displayName });
 
@@ -120,6 +113,10 @@ export default function Room() {
       if (data.spherical && Object.keys(data.spherical).length > 0) setRemoteSpherical(data.spherical);
       if (data.cameraVideo) setCameraVideo(data.cameraVideo);
       if (data.gpsData) setGpsData(data.gpsData);
+      if (typeof data.videoSharingEnabled === 'boolean') {
+        setVideoSharingEnabled(data.videoSharingEnabled);
+        setShowSidebar(data.videoSharingEnabled);
+      }
     });
 
     socket.on('you-are-admin', () => setIsAdmin(true));
@@ -167,6 +164,11 @@ export default function Room() {
       if (spherical && Object.keys(spherical).length > 0) setRemoteSpherical(spherical);
     });
 
+    socket.on('video-sharing-toggled', ({ enabled }) => {
+      setVideoSharingEnabled(enabled);
+      setShowSidebar(enabled);
+    });
+
     return () => {
       socket.off('joined');
       socket.off('you-are-admin');
@@ -178,8 +180,9 @@ export default function Room() {
       socket.off('sync-seek');
       socket.off('heartbeat');
       socket.off('spherical-update');
+      socket.off('video-sharing-toggled');
     };
-  }, [socket, roomId, displayName]);
+  }, [socket, roomId, displayName, jitsiJoined]);
 
   useEffect(() => {
     if (!isAdmin || !playerRef.current) return;
@@ -345,25 +348,6 @@ export default function Room() {
     return data;
   };
 
-  const handleVideoUpload = async (e) => {
-    const videoFile = e.target.files?.[0];
-    if (!videoFile) return;
-
-    setUploading(true);
-    try {
-      const result = await uploadVideo(videoFile);
-      setVideoList([...videoList, result]);
-      setShowUpload(false);
-      // Optionally auto-select the uploaded video
-      handleSetVideo(result.videoId);
-    } catch (error) {
-      console.error('Upload failed:', error);
-      alert('Failed to upload video');
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const handleMapUpdate = ({ mapCenter: c, mapZoom: z }) => {
     if (c) setMapCenter(c);
     if (Number.isFinite(z)) setMapZoom(z);
@@ -380,6 +364,15 @@ export default function Room() {
     });
   };
 
+  const handleTogglePanel = useCallback(() => {
+    const next = !showSidebar;
+    setShowSidebar(next);
+    if (socket && isAdmin && roomId) {
+      setVideoSharingEnabled(next);
+      socket.emit('video-sharing-toggle', { roomId, enabled: next });
+    }
+  }, [socket, isAdmin, roomId, showSidebar]);
+
   const socketStatus =
     socket === undefined ? 'loading' : socket === null ? 'connecting' : 'ready';
   if (socketStatus !== 'ready') {
@@ -392,54 +385,24 @@ export default function Room() {
     );
   }
 
-  // No name yet: show Jitsi as the single join flow. Joining Jitsi will auto-join the video room.
-  if (!joined && !displayName) {
-    return (
-      <div className="min-h-screen flex flex-col bg-cinema-black">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-cinema-border bg-cinema-dark shrink-0">
-          <Link
-            to="/"
-            className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
-            aria-label="Back to home"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <span className="text-cinema-muted font-mono text-sm">Room: {roomId}</span>
-          <span className="text-cinema-muted text-sm">Join the video call to participate</span>
-        </div>
-        <div className="flex-1 min-h-0">
-          <VideoCallPanel
-            roomId={roomId}
-            displayName=""
-            onJitsiJoined={(name) => setDisplayName(name || 'Guest')}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (!joined) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-cinema-black">
-        <div className="text-cinema-muted">Joining room...</div>
-      </div>
-    );
-  }
-
+  // Single layout that keeps VideoCallPanel mounted throughout - prevents iframe remounting
   return (
     <div className="flex h-screen bg-cinema-black overflow-hidden">
       <main className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between px-4 py-3 border-b border-cinema-border bg-cinema-dark shrink-0">
           <div className="flex items-center gap-3">
             <Link
-              to="/"
+              to={joined ? "/" : "/room/retailiq-meet"}
               className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
-              aria-label="Back to home"
+              aria-label={joined ? "Back to home" : "Back"}
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <span className="text-cinema-muted font-mono text-sm">Room: {roomId}</span>
-            {isAdmin && (
+            {!joined && displayName && (
+              <span className="text-cinema-muted text-sm">Joining room…</span>
+            )}
+            {joined && isAdmin && (
               <>
                 <button
                   type="button"
@@ -457,195 +420,151 @@ export default function Room() {
               </>
             )}
           </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2 flex-1 max-w-xl ml-4">
-              <Video className="w-4 h-4 text-cinema-muted shrink-0" />
-              <select
-                value={videoId || ''}
-                onChange={(e) => handleSetVideo(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+          <div className="flex items-center gap-2">
+            {joined && isAdmin && (
+              <button
+                type="button"
+                onClick={handleTogglePanel}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-cinema-border text-cinema-silver hover:text-white hover:border-cinema-muted transition-colors text-sm"
+                title={showSidebar ? 'Hide video & map panel' : 'Show video & map panel'}
               >
-                <option value="">Select a 360° video...</option>
-                {videoList.map((video) => (
-                  <option key={video.id ?? video.videoId} value={video.id ?? video.videoId}>
-                    {video.filename} {video.hasGPS && '📍'}
-                  </option>
-                ))}
-              </select>
-              <label className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors cursor-pointer flex items-center gap-2">
-                <Upload className="w-4 h-4" />
-                {uploading ? 'Uploading...' : 'Upload'}
-                <input
-                  type="file"
-                  accept="video/mp4,video/webm,video/quicktime"
-                  onChange={handleVideoUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          )}
+                {showSidebar ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+                {showSidebar ? 'Hide panel' : 'Show panel'}
+              </button>
+            )}
+          </div>
         </header>
 
-        <div className="flex-1 flex min-h-0">
-          <div className="basis-[70%] flex flex-col items-center justify-center p-6 min-w-0">
-            <div className="relative w-full max-w-4xl">
-              <Custom360Player
-                ref={playerRef}
-                videoUrl={cameraVideo?.public_url ?? (videoId ? getVideoUrl(videoId) : null)}
-                isAdmin={isAdmin}
-                is360={cameraVideo ? true : (videoList.find((v) => (v.id ?? v.videoId) === videoId)?.is360 ?? true)}
-                remoteTime={remoteTime}
-                remotePlaying={remotePlaying}
-                remoteSpherical={remoteSpherical}
-                onPlay={emitPlay}
-                onPause={emitPause}
-                onSeek={emitSeek}
-                onSphericalChange={emitSpherical}
-                syncThresholdSec={SYNC_THRESHOLD_SEC}
-              />
-              {!videoId && (
-                <div className="absolute inset-0 flex items-center justify-center text-center text-cinema-muted">
-                  {isAdmin ? (
-                    <p>Select a 360° video from the dropdown above or upload a new one to start.</p>
-                  ) : (
-                    <p>Waiting for the host to load a video...</p>
+        {/* Jitsi full width; overlay with video + map when panel shown */}
+        <div className="flex-1 min-h-0 flex overflow-hidden relative">
+          {/* Jitsi - always full width - NEVER UNMOUNTS */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+            <VideoCallPanel
+              key={roomId}
+              roomId={roomId}
+              displayName={joined ? userName : (nameFromUrl || '')}
+              videoSharingEnabled={videoSharingEnabled}
+              onJitsiJoined={!joined ? (name) => {
+                setDisplayName(name || 'Guest');
+                setJitsiJoined(true);
+              } : undefined}
+              onJitsiModerator={() => socket && roomId && socket.emit('jitsi-moderator', { roomId })}
+              showHeader={false}
+            />
+          </div>
+
+          {/* Overlay: video (70%) + map (30%) - covers Jitsi area - only shown when joined */}
+          {joined && showSidebar && (
+            <div className="absolute inset-0 z-20 flex flex-col bg-cinema-black">
+              {/* Header with close */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-cinema-border shrink-0 bg-cinema-dark">
+                <div className="flex items-center gap-2">
+                  <Film className="w-4 h-4 text-cinema-muted" />
+                  <span className="text-sm font-medium text-white">Shared 360° video</span>
+                  {videoSharingEnabled && (
+                    <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-medium">
+                      Live
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-          <div className="basis-[30%] border-l border-cinema-border bg-cinema-panel flex flex-col min-h-0 min-w-0">
-            {/* Tabs: Video library (admin only) | Map | Video Call */}
-            <div className="flex border-b border-cinema-border shrink-0">
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setRightPanelTab('videos')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-                    rightPanelTab === 'videos'
-                      ? 'bg-cinema-dark text-white border-b-2 border-red-500'
-                      : 'text-cinema-muted hover:text-white hover:bg-cinema-dark/50'
-                  }`}
-                >
-                  <Film className="w-4 h-4" />
-                  Videos
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setRightPanelTab('map')}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-                  rightPanelTab === 'map'
-                    ? 'bg-cinema-dark text-white border-b-2 border-red-500'
-                    : 'text-cinema-muted hover:text-white hover:bg-cinema-dark/50'
-                }`}
-              >
-                <Map className="w-4 h-4" />
-                Map
-              </button>
-              <button
-                type="button"
-                onClick={() => setRightPanelTab('videoCall')}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-                  rightPanelTab === 'videoCall'
-                    ? 'bg-cinema-dark text-white border-b-2 border-red-500'
-                    : 'text-cinema-muted hover:text-white hover:bg-cinema-dark/50'
-                }`}
-              >
-                <Phone className="w-4 h-4" />
-                Video Call
-              </button>
-            </div>
-
-            {isAdmin && rightPanelTab === 'videos' && (
-              <div className="flex-1 overflow-y-auto p-3">
-                {isAdmin ? (
-                  <>
-                    <p className="text-cinema-muted text-xs mb-3">
-                      Click a video to play it in the room.
-                    </p>
-                    {videoList.length === 0 ? (
-                      <p className="text-cinema-muted text-sm">No videos yet. Upload from the header.</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {videoList.map((video) => (
-                          <li key={video.id}>
-                            <button
-                              type="button"
-                              onClick={() => handleSetVideo(video.id)}
-                              className={`w-full text-left rounded-lg border p-3 transition-colors ${
-                                videoId === video.id
-                                  ? 'border-red-500 bg-red-500/10 text-white'
-                                  : 'border-cinema-border bg-cinema-dark hover:border-cinema-muted hover:bg-cinema-dark/80 text-cinema-silver'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="flex-shrink-0 w-10 h-10 rounded bg-cinema-black flex items-center justify-center">
-                                  <Film className="w-5 h-5 text-cinema-muted" />
-                                </span>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-mono truncate" title={video.filename}>
-                                    {video.filename}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    {video.is360 && (
-                                      <span className="inline-flex items-center gap-0.5 text-amber-400 text-xs">
-                                        <Globe className="w-3 h-3" />
-                                        360°
-                                      </span>
-                                    )}
-                                    {video.hasGPS && <span className="text-xs text-cinema-muted">📍 GPS</span>}
-                                  </div>
-                                </div>
-                                {videoId === video.id && (
-                                  <span className="text-xs text-red-400 font-medium shrink-0">Playing</span>
-                                )}
-                              </div>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-6">
-                    <div className="w-16 h-16 rounded-full bg-cinema-dark border border-cinema-border flex items-center justify-center mb-4">
-                      <Film className="w-8 h-8 text-cinema-muted" />
-                    </div>
-                    <h3 className="text-white font-medium mb-2">Video Control</h3>
-                    <p className="text-cinema-muted text-sm max-w-xs">
-                      Only the host can select and control videos. The current video will play automatically for all viewers.
-                    </p>
-                    {videoId && (
-                      <div className="mt-4 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-                        <p className="text-xs text-red-400">Currently playing</p>
-                      </div>
-                    )}
-                  </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleTogglePanel}
+                    className="p-2 rounded-lg text-cinema-muted hover:text-white hover:bg-cinema-panel transition-colors"
+                    title="Close overlay"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 )}
               </div>
-            )}
 
-            {rightPanelTab === 'videoCall' && (
-              <div className="flex-1 min-h-0 flex flex-col">
-                <VideoCallPanel roomId={roomId} displayName={userName} />
-              </div>
-            )}
+              {/* 70% video | 30% map */}
+              <div className="flex-1 min-h-0 flex overflow-hidden">
+                {/* Video section - 70% */}
+                <section className="w-[70%] min-w-0 flex flex-col overflow-hidden border-r border-cinema-border">
+                  {videoSharingEnabled ? (
+                    <>
+                      <div className="flex items-center gap-2 px-4 py-3 border-b border-cinema-border shrink-0">
+                        {isAdmin ? (
+                          <select
+                            value={videoId || ''}
+                            onChange={(e) => handleSetVideo(e.target.value)}
+                            className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                          >
+                            <option value="">Select a 360° video...</option>
+                            {videoList.map((video) => (
+                              <option key={video.id ?? video.videoId} value={video.id ?? video.videoId}>
+                                {video.filename} {video.hasGPS && '📍'}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-cinema-silver text-sm">
+                            {videoId ? `Watching: ${videoId}` : 'Waiting for host to select video...'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-h-0 bg-black relative">
+                        <Custom360Player
+                          ref={playerRef}
+                          videoUrl={cameraVideo?.public_url ?? (videoId ? getVideoUrl(videoId) : null)}
+                          hideBigPlayButton={!videoId}
+                          isAdmin={isAdmin}
+                          is360={
+                            cameraVideo
+                              ? true
+                              : (videoList.find((v) => (v.id ?? v.videoId) === videoId)?.is360 ?? true)
+                          }
+                          remoteTime={remoteTime}
+                          remotePlaying={remotePlaying}
+                          remoteSpherical={remoteSpherical}
+                          onPlay={emitPlay}
+                          onPause={emitPause}
+                          onSeek={emitSeek}
+                          onSphericalChange={emitSpherical}
+                          syncThresholdSec={SYNC_THRESHOLD_SEC}
+                        />
+                        {!videoId && (
+                          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-cinema-muted text-sm">
+                            {isAdmin ? (
+                              <p>Select a 360° video from the dropdown above to start.</p>
+                            ) : (
+                              <p>Waiting for the host to load a video...</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center px-4 text-center text-cinema-muted text-sm">
+                      {isAdmin
+                        ? 'Enable video sharing from the top bar to start a shared 360° video.'
+                        : 'Waiting for the host to enable video sharing.'}
+                    </div>
+                  )}
+                </section>
 
-            {rightPanelTab === 'map' && (
-              <div className="flex-1 min-h-0 flex flex-col">
-                <MapPanel
-                  center={mapCenter}
-                  zoom={mapZoom}
-                  isAdmin={isAdmin}
-                  onUpdate={handleMapUpdate}
-                  gpsData={gpsData}
-                  currentPosition={currentPosition}
-                />
+                {/* Map section - 30% */}
+                <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-cinema-panel">
+                  <div className="flex items-center gap-2 px-4 py-2 border-b border-cinema-border shrink-0">
+                    <Map className="w-4 h-4 text-cinema-muted" />
+                    <span className="text-sm font-medium text-white">Map</span>
+                  </div>
+                  <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
+                    <MapPanel
+                      center={mapCenter}
+                      zoom={mapZoom}
+                      isAdmin={isAdmin}
+                      onUpdate={handleMapUpdate}
+                      gpsData={gpsData}
+                      currentPosition={currentPosition}
+                    />
+                  </div>
+                </section>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

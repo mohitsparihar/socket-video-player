@@ -37,6 +37,8 @@ const io = new Server(httpServer, {
 
 // roomId -> { adminId, users, videoId?, currentTime?, isPlaying?, mapCenter?, mapZoom?, spherical?, cameraVideo?, gpsData? }
 const rooms = new Map();
+// roomId -> socketId (Jitsi moderator claim before join-room)
+const pendingModerators = new Map();
 
 function getOrCreateRoom(roomId) {
   if (!rooms.has(roomId)) {
@@ -51,6 +53,7 @@ function getOrCreateRoom(roomId) {
       spherical: null,
       cameraVideo: null,
       gpsData: null,
+      videoSharingEnabled: false,
     });
   }
   return rooms.get(roomId);
@@ -61,12 +64,14 @@ io.on('connection', (socket) => {
     const room = getOrCreateRoom(roomId);
     // Avoid duplicate entries if join-room is sent twice (e.g. React StrictMode)
     room.users = room.users.filter((u) => u.id !== socket.id);
-    const isFirst = room.users.length === 0;
     const user = { id: socket.id, name: userName || `User ${socket.id.slice(0, 6)}` };
     room.users.push(user);
 
-    if (isFirst) {
+    // Admin is set by Jitsi moderator (jitsi-moderator event), not first joiner
+    const pendingAdmin = pendingModerators.get(roomId);
+    if (pendingAdmin === socket.id) {
       room.adminId = socket.id;
+      pendingModerators.delete(roomId);
     }
 
     socket.join(roomId);
@@ -86,12 +91,26 @@ io.on('connection', (socket) => {
       spherical: room.spherical,
       cameraVideo: room.cameraVideo,
       gpsData: room.gpsData,
+      videoSharingEnabled: room.videoSharingEnabled,
     });
 
     io.to(roomId).emit('users-update', {
       users: room.users,
       adminId: room.adminId,
     });
+  });
+
+  socket.on('jitsi-moderator', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    const inRoom = socket.roomId === roomId && room?.users.some((u) => u.id === socket.id);
+    if (inRoom) {
+      room.adminId = socket.id;
+      socket.emit('you-are-admin');
+      io.to(roomId).emit('users-update', { users: room.users, adminId: room.adminId });
+    } else {
+      // User not in room yet (join-room may not have run); store for when they join
+      pendingModerators.set(roomId, socket.id);
+    }
   });
 
   socket.on('set-video', ({ roomId, videoId, cameraVideo, gpsData }) => {
@@ -165,6 +184,13 @@ io.on('connection', (socket) => {
     if (!room || room.adminId !== socket.id) return;
     room.gpsData = gpsData;
     socket.to(roomId).emit('gps-data-update', { gpsData });
+  });
+
+  socket.on('video-sharing-toggle', ({ roomId, enabled }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.adminId !== socket.id) return;
+    room.videoSharingEnabled = enabled;
+    io.to(roomId).emit('video-sharing-toggled', { enabled });
   });
 
   socket.on('disconnect', () => {

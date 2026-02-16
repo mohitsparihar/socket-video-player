@@ -99,6 +99,22 @@ export default function MapPanel({
     };
   }, [apiKey, isAdmin, onUpdate, center, zoom, loadMaps]);
 
+  // When the map container gets or changes size, trigger resize so the map paints (fixes black map when container had 0 size at init)
+  useEffect(() => {
+    const el = mapRef.current;
+    const map = mapInstanceRef.current;
+    if (!el || !map) return;
+    const triggerResize = () => {
+      try {
+        map.resize();
+      } catch (_) {}
+    };
+    const ro = new ResizeObserver(triggerResize);
+    ro.observe(el);
+    triggerResize(); // initial paint in case container already has size
+    return () => ro.disconnect();
+  }, [mapReady]);
+
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -394,9 +410,9 @@ export default function MapPanel({
   }
 
   return (
-    <div className="flex-1 min-h-0 w-full p-3 flex flex-col">
+    <div className="h-full min-h-0 w-full p-1 flex flex-col">
       <div className="flex-1 min-h-0 w-full overflow-hidden rounded-xl border border-cinema-border bg-cinema-dark">
-        <div ref={mapRef} className="h-full w-full" />
+        <div ref={mapRef} className="h-full w-full min-h-[200px]" />
       </div>
     </div>
   );
