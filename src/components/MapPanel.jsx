@@ -20,6 +20,8 @@ export default function MapPanel({
   const [mapReady, setMapReady] = useState(false);
 
   const mapsLibRef = useRef(null);
+  const coreLibRef = useRef(null);
+  const markerLibRef = useRef(null);
   const currentMarkerRef = useRef(null);
   const traveledPathRef = useRef(null);
   const futurePathRef = useRef(null);
@@ -33,7 +35,17 @@ export default function MapPanel({
       if (!mapsLibRef.current) {
         mapsLibRef.current = await importLibrary('maps');
       }
-      return mapsLibRef.current;
+      if (!coreLibRef.current) {
+        coreLibRef.current = await importLibrary('core');
+      }
+      if (!markerLibRef.current) {
+        markerLibRef.current = await importLibrary('marker');
+      }
+      return {
+        maps: mapsLibRef.current,
+        core: coreLibRef.current,
+        marker: markerLibRef.current,
+      };
     } catch (err) {
       const message = err?.message || String(err);
       setMapError(message);
@@ -50,7 +62,7 @@ export default function MapPanel({
       const libs = await loadMaps();
       if (!isMounted || !libs || mapInstanceRef.current || !mapRef.current) return;
       try {
-        const map = new libs.Map(mapRef.current, {
+        const map = new libs.maps.Map(mapRef.current, {
           center,
           zoom,
           mapTypeControl: false,
@@ -59,17 +71,18 @@ export default function MapPanel({
         });
         mapInstanceRef.current = map;
 
-        // Detect user interaction to stop auto-centering
-        map.addListener('dragstart', () => {
-          setIsAutoCentering(false);
-        });
-
-        // Detect manual zoom
-        map.addListener('zoom_changed', () => {
-          if (!isProgrammaticRef.current) {
+        // Only host can manually pan/zoom; members should always follow host map updates.
+        if (isAdmin) {
+          map.addListener('dragstart', () => {
             setIsAutoCentering(false);
-          }
-        });
+          });
+
+          map.addListener('zoom_changed', () => {
+            if (!isProgrammaticRef.current) {
+              setIsAutoCentering(false);
+            }
+          });
+        }
 
         if (!isAdmin) {
           map.setOptions({
@@ -99,10 +112,7 @@ export default function MapPanel({
           });
         }
 
-        if (isMounted) {
-          setMapReady(true);
-          console.log('Map is ready!');
-        }
+        if (isMounted) setMapReady(true);
       } catch (err) {
         if (isMounted) setMapError(err?.message || 'Failed to create map');
       }
@@ -119,9 +129,10 @@ export default function MapPanel({
     const map = mapInstanceRef.current;
     if (!el || !map) return;
     const triggerResize = () => {
-      try {
-        map.resize();
-      } catch (_) { }
+      const mapsEvent = coreLibRef.current?.event ?? window.google?.maps?.event;
+      if (mapsEvent?.trigger) {
+        mapsEvent.trigger(map, 'resize');
+      }
     };
     const ro = new ResizeObserver(triggerResize);
     ro.observe(el);
@@ -156,97 +167,105 @@ export default function MapPanel({
     }
   }, [center, zoom, isAutoCentering]);
 
-  // GPS Path Effect
+  // GPS Path Effect - draw path and markers when map is ready and has gpsData
   useEffect(() => {
-    if (!mapReady) {
-      console.log('GPS effect: waiting for map to be ready');
-      return;
-    }
+    if (!mapReady) return;
 
     const map = mapInstanceRef.current;
-    if (!map || !gpsData?.gpsData || !mapsLibRef.current) {
-      console.log('GPS effect early return:', {
-        hasMap: !!map,
-        hasGpsData: !!gpsData?.gpsData,
-        hasLibs: !!mapsLibRef.current,
-        gpsData
-      });
-      return;
-    }
+    if (!map || !gpsData?.gpsData || !mapsLibRef.current) return;
 
-    console.log('Drawing GPS data:', gpsData);
+    const drawOverlays = () => {
+      gpsMarkersRef.current.forEach(marker => marker.setMap(null));
+      gpsMarkersRef.current = [];
 
-    gpsMarkersRef.current.forEach(marker => marker.setMap(null));
-    gpsMarkersRef.current = [];
+      if (traveledPathRef.current) {
+        traveledPathRef.current.setMap(null);
+        traveledPathRef.current = null;
+      }
+      if (futurePathRef.current) {
+        futurePathRef.current.setMap(null);
+        futurePathRef.current = null;
+      }
 
-    if (traveledPathRef.current) {
-      traveledPathRef.current.setMap(null);
-      traveledPathRef.current = null;
-    }
-    if (futurePathRef.current) {
-      futurePathRef.current.setMap(null);
-      futurePathRef.current = null;
-    }
+      const points = gpsData.gpsData;
+      if (!points || points.length === 0) return;
 
-    const points = gpsData.gpsData;
-    if (!points || points.length === 0) {
-      console.log('No GPS points found');
-      return;
-    }
+      const pathCoordinates = points.map(p => ({ lat: p.lat, lng: p.lng }));
 
-    const pathCoordinates = points.map(p => ({ lat: p.lat, lng: p.lng }));
+      const PolylineClass = mapsLibRef.current?.Polyline ?? window.google?.maps?.Polyline;
+      const LatLngBoundsClass = coreLibRef.current?.LatLngBounds ?? window.google?.maps?.LatLngBounds;
+      const MarkerClass = markerLibRef.current?.Marker ?? window.google?.maps?.Marker;
+      const mapsEvent = coreLibRef.current?.event ?? window.google?.maps?.event;
+      const SymbolPathEnum = coreLibRef.current?.SymbolPath ?? window.google?.maps?.SymbolPath;
 
-    if (window.google?.maps?.LatLngBounds) {
-      const bounds = new window.google.maps.LatLngBounds();
-      pathCoordinates.forEach(coord => bounds.extend(coord));
+      if (LatLngBoundsClass) {
+        const bounds = new LatLngBoundsClass();
+        pathCoordinates.forEach(coord => bounds.extend(coord));
 
-      map.fitBounds(bounds, {
-        top: 50,
-        right: 50,
-        bottom: 50,
-        left: 50,
-      });
-
-      window.google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
-        const currentZoom = map.getZoom();
-        if (currentZoom > 18) {
-          map.setZoom(18);
-        }
-      });
-    }
-
-    if (window.google?.maps?.Polyline) {
-      futurePathRef.current = new window.google.maps.Polyline({
-        path: pathCoordinates,
-        geodesic: true,
-        strokeColor: '#9CA3AF',
-        strokeOpacity: 0.5,
-        strokeWeight: 3,
-        map: map,
-      });
-    }
-
-    if (window.google?.maps?.Marker) {
-      points.forEach((point, index) => {
-        const timeInSeconds = point.timestamp ?? (point.timeMs ? point.timeMs / 1000 : 0);
-        const marker = new window.google.maps.Marker({
-          position: { lat: point.lat, lng: point.lng },
-          map: map,
-          icon: {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            fillColor: '#4285F4',
-            fillOpacity: 0.8,
-            strokeColor: '#ffffff',
-            strokeWeight: 2,
-            scale: 4,
-          },
-          title: `Point ${index + 1} at ${timeInSeconds.toFixed(1)}s`,
+        map.fitBounds(bounds, {
+          top: 50,
+          right: 50,
+          bottom: 50,
+          left: 50,
         });
-        gpsMarkersRef.current.push(marker);
-      });
+
+        if (mapsEvent) {
+          mapsEvent.addListenerOnce(map, 'bounds_changed', () => {
+            const currentZoom = map.getZoom();
+            if (currentZoom > 18) {
+              map.setZoom(18);
+            }
+          });
+        }
+      }
+
+      // Draw path only when we have 2+ points (polyline needs 2+ points to be visible)
+      if (PolylineClass && pathCoordinates.length >= 2) {
+        futurePathRef.current = new PolylineClass({
+          path: pathCoordinates,
+          geodesic: true,
+          strokeColor: '#4285F4',
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+          map: map,
+        });
+      }
+
+      if (MarkerClass && SymbolPathEnum) {
+        points.forEach((point, index) => {
+          const timeInSeconds = point.timestamp ?? (point.timeMs ? point.timeMs / 1000 : 0);
+          const marker = new MarkerClass({
+            position: { lat: point.lat, lng: point.lng },
+            map: map,
+            icon: {
+              path: SymbolPathEnum.CIRCLE,
+              fillColor: '#4285F4',
+              fillOpacity: 0.8,
+              strokeColor: '#ffffff',
+              strokeWeight: 2,
+              scale: 4,
+            },
+            title: `Point ${index + 1} at ${timeInSeconds.toFixed(1)}s`,
+          });
+          gpsMarkersRef.current.push(marker);
+        });
+      }
+
+    };
+
+    // Draw immediately, then once more on map 'idle' to ensure overlays render
+    // (members may have 0-sized map container initially when overlay first appears)
+    drawOverlays();
+    const mapsEvent = mapsLibRef.current?.event ?? window.google?.maps?.event;
+    let idleListener = null;
+    if (mapsEvent) {
+      idleListener = mapsEvent.addListenerOnce(map, 'idle', drawOverlays);
     }
 
     return () => {
+      if (idleListener && typeof idleListener.remove === 'function') {
+        idleListener.remove();
+      }
       gpsMarkersRef.current.forEach(marker => marker.setMap(null));
       gpsMarkersRef.current = [];
       if (traveledPathRef.current) {
@@ -273,10 +292,12 @@ export default function MapPanel({
     }
     if (!map || !mapsLibRef.current) return;
 
-    if (!window.google?.maps?.Marker) return;
+    const MarkerClass = markerLibRef.current?.Marker ?? window.google?.maps?.Marker;
+    const PolylineClass = mapsLibRef.current?.Polyline ?? window.google?.maps?.Polyline;
+    if (!MarkerClass) return;
 
     if (!currentMarkerRef.current) {
-      currentMarkerRef.current = new window.google.maps.Marker({
+      currentMarkerRef.current = new MarkerClass({
         position: currentPosition,
         map: map,
         icon: {
@@ -300,8 +321,8 @@ export default function MapPanel({
               <circle cx="16" cy="12" r="5" fill="#fff"/>
             </svg>
           `),
-          scaledSize: new window.google.maps.Size(32, 48),
-          anchor: new window.google.maps.Point(16, 48),
+          scaledSize: new (coreLibRef.current?.Size ?? window.google?.maps?.Size)(32, 48),
+          anchor: new (coreLibRef.current?.Point ?? window.google?.maps?.Point)(16, 48),
         },
         title: 'Current Position',
         zIndex: 1000,
@@ -310,7 +331,7 @@ export default function MapPanel({
       currentMarkerRef.current.setPosition(currentPosition);
     }
 
-    if (gpsData?.gpsData && window.google?.maps?.Polyline) {
+    if (gpsData?.gpsData && PolylineClass) {
       const points = gpsData.gpsData;
       let minDistance = Infinity;
       let splitIndex = 0;
@@ -334,7 +355,7 @@ export default function MapPanel({
       if (traveledPathRef.current) {
         traveledPathRef.current.setPath(traveledCoords);
       } else if (traveledCoords.length > 1) {
-        traveledPathRef.current = new window.google.maps.Polyline({
+        traveledPathRef.current = new PolylineClass({
           path: traveledCoords,
           geodesic: true,
           strokeColor: '#EF4444',
@@ -347,6 +368,15 @@ export default function MapPanel({
 
       if (futurePathRef.current) {
         futurePathRef.current.setPath(futureCoords);
+      } else if (futureCoords.length >= 2) {
+        futurePathRef.current = new PolylineClass({
+          path: futureCoords,
+          geodesic: true,
+          strokeColor: '#9CA3AF',
+          strokeOpacity: 0.8,
+          strokeWeight: 3,
+          map: map,
+        });
       }
     }
 

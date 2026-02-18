@@ -134,7 +134,7 @@ export default function Room() {
 
     socket.on('video-changed', ({ videoId: v, cameraVideo: cv, gpsData: gps }) => {
       setVideoId(v);
-      if (cv) setCameraVideo(cv);
+      setCameraVideo(cv || null);
       if (gps) setGpsData(gps);
       // Reset current position when video changes for non-admin users
       setCurrentPosition(null);
@@ -298,18 +298,22 @@ export default function Room() {
     const position = interpolateGPSPosition(gpsData.gpsData, currentTime);
     if (position) {
       setCurrentPosition(position);
-      // Update map center to follow current position
-      setMapCenter(position);
+      // Keep members aligned to host-controlled map position.
+      // Only admin should drive center updates from GPS playback.
+      if (isAdmin) setMapCenter(position);
     }
   }, [isAdmin, localTime, remoteTime, gpsData]);
 
-  // Load GPS when video changes (only for local videos; camera videos load GPS in handleSetVideo / state effect)
+  // Load GPS when video changes for host only.
+  // Members must use GPS pushed via socket ('joined'/'video-changed') and should not
+  // fetch local GPS by videoId, which can overwrite room GPS with null.
   useEffect(() => {
+    if (!isAdmin) return;
     if (!videoId) return;
     const v = videoList.find((x) => (x.id ?? x.videoId) === videoId);
     if (v?.public_url) return;
     loadGPSData(videoId);
-  }, [videoId, videoList]);
+  }, [isAdmin, videoId, videoList]);
 
   const handleSetVideo = async (selectedVideoId) => {
     if (!selectedVideoId || !socket || !isAdmin || !roomId) return;
