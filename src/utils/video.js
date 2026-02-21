@@ -1,17 +1,30 @@
+import { getTokenFromAuthCookie } from './auth.js';
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const CAMERA_UPLOADS_URL =
     import.meta.env.VITE_CAMERA_UPLOADS_URL ||
     'https://beapis-in.staging.geoiq.ai/bdapp/stg/v1/bd/getCameraAppUploadsForAccount';
 
 /**
+ * Resolve Bearer token: cookie (GEOIQ_RETAILIQ_AUTH_*) first, then explicit param, then env.
+ * @param {string} [accessToken] - Optional explicit token
+ * @returns {string|null}
+ */
+function resolveAccessToken(accessToken) {
+    return accessToken || getTokenFromAuthCookie() || import.meta.env.VITE_BD_ACCESS_TOKEN || null;
+}
+
+/**
  * Fetch video list from GeoIQ Camera App Uploads API (POST with Bearer token)
- * @param {string} [accessToken] - Bearer token. Uses VITE_BD_ACCESS_TOKEN if not provided.
+ * Token is read from browser cookie GEOIQ_RETAILIQ_AUTH_DEVELOPMENT (or VITE_GEOIQ_AUTH_COOKIE_NAME),
+ * then from VITE_BD_ACCESS_TOKEN, or pass explicitly.
+ * @param {string} [accessToken] - Bearer token. If not provided, uses cookie then env.
  * @returns {Promise<unknown>} API response (parsed JSON)
  */
 export async function getCameraAppUploads(accessToken) {
-    const token = accessToken || import.meta.env.VITE_BD_ACCESS_TOKEN;
+    const token = resolveAccessToken(accessToken);
     if (!token) {
-        throw new Error('Access token required for getCameraAppUploads (set VITE_BD_ACCESS_TOKEN or pass token)');
+        throw new Error('Access token required for getCameraAppUploads (set cookie GEOIQ_RETAILIQ_AUTH_DEVELOPMENT with token, or VITE_BD_ACCESS_TOKEN, or pass token)');
     }
     const response = await fetch(CAMERA_UPLOADS_URL, {
         method: 'POST',
@@ -48,7 +61,7 @@ function normalizeCameraUploads(raw) {
 
 /**
  * Fetch video list from GeoIQ Camera App API (frontend). Use this for the video library.
- * Requires VITE_BD_ACCESS_TOKEN (or pass accessToken).
+ * Token from cookie (GEOIQ_RETAILIQ_AUTH_*), then VITE_BD_ACCESS_TOKEN, or pass accessToken.
  */
 export async function getVideoListFromCameraApi(accessToken) {
     const raw = await getCameraAppUploads(accessToken);
