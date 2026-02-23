@@ -2,9 +2,10 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useLocation, useNavigate, Link } from 'react-router';
 import { useSocket } from '../context/SocketContext';
 import Custom360Player from '../components/Custom360Player';
+import SplitView360 from '../components/SplitView360';
 import MapPanel from '../components/MapPanel';
 import VideoCallPanel from '../components/VideoCallPanel';
-import { ArrowLeft, Crown, Share2, Film, Map, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { ArrowLeft, Crown, Share2, Film, Map, PanelRightClose, PanelRightOpen, X, Columns3 } from 'lucide-react';
 import { getVideoUrl, getVideoListFromCameraApi, getGPSData, getGPSDataFromUrl, interpolateGPSPosition } from '../utils/video';
 
 const HEARTBEAT_INTERVAL_MS = 3000;
@@ -39,6 +40,7 @@ export default function Room() {
   const [localTime, setLocalTime] = useState(0); // Track admin's local video time
   const [videoSharingEnabled, setVideoSharingEnabled] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [splitView, setSplitView] = useState(false);
 
   const playerRef = useRef(null);
   const heartbeatRef = useRef(null);
@@ -128,6 +130,11 @@ export default function Room() {
         setVideoSharingEnabled(data.videoSharingEnabled);
         setShowSidebar(data.videoSharingEnabled);
       }
+      if (typeof data.splitView === 'boolean') {
+        setSplitView(data.splitView);
+        // If split view is already active when joining, show the panel
+        if (data.splitView) setShowSidebar(true);
+      }
     });
 
     socket.on('you-are-admin', () => setIsAdmin(true));
@@ -169,6 +176,12 @@ export default function Room() {
     socket.on('heartbeat', ({ currentTime }) => {
       setRemoteTime(currentTime);
       lastSyncRef.current = currentTime;
+    });
+
+    socket.on('split-view-toggled', ({ splitView: sv }) => {
+      setSplitView(sv);
+      // Show the panel for members when admin turns on split view; hide when turned off
+      setShowSidebar(sv);
     });
 
     socket.on('spherical-update', ({ spherical }) => {
@@ -494,22 +507,45 @@ export default function Room() {
                     </span>
                   )}
                 </div>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={handleTogglePanel}
-                    className="p-2 rounded-lg text-light-muted hover:text-light-text hover:bg-light-surface transition-colors"
-                    title="Close overlay"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {isAdmin && joined && videoSharingEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !splitView;
+                        setSplitView(next);
+                        socket?.emit('split-view-toggle', { roomId, splitView: next });
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-colors ${splitView
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-white border-light-border text-light-text hover:bg-light-surface'
+                        }`}
+                      title={splitView ? 'Switch to single view' : 'Switch to 3-panel split view (Left / Center / Right)'}
+                    >
+                      <Columns3 className="w-4 h-4" />
+                      {splitView ? 'Split View' : 'Split View'}
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleTogglePanel}
+                      className="p-2 rounded-lg text-light-muted hover:text-light-text hover:bg-light-surface transition-colors"
+                      title="Close overlay"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* 70% video | 30% map */}
+              {/* video | map — split view expands video to full width and hides map */}
               <div className="flex-1 min-h-0 flex overflow-hidden">
-                {/* Video section - 70% */}
-                <section className="w-[70%] min-w-0 flex flex-col overflow-hidden border-r border-light-border">
+                {/* Video section — 100% in split view, 70% otherwise */}
+                <section
+                  className={`min-w-0 flex flex-col overflow-hidden ${splitView ? 'w-full' : 'w-[70%] border-r border-light-border'
+                    }`}
+                >
                   {videoSharingEnabled ? (
                     <>
                       <div className="flex items-center gap-2 px-4 py-3 border-b border-light-border shrink-0">
@@ -533,25 +569,47 @@ export default function Room() {
                         )}
                       </div>
                       <div className="flex-1 min-h-0 bg-black relative">
-                        <Custom360Player
-                          ref={playerRef}
-                          videoUrl={cameraVideo?.public_url ?? (videoId ? getVideoUrl(videoId) : null)}
-                          hideBigPlayButton={!videoId}
-                          isAdmin={isAdmin}
-                          is360={
-                            cameraVideo
-                              ? true
-                              : (videoList.find((v) => (v.id ?? v.videoId) === videoId)?.is360 ?? true)
-                          }
-                          remoteTime={remoteTime}
-                          remotePlaying={remotePlaying}
-                          remoteSpherical={remoteSpherical}
-                          onPlay={emitPlay}
-                          onPause={emitPause}
-                          onSeek={emitSeek}
-                          onSphericalChange={emitSpherical}
-                          syncThresholdSec={SYNC_THRESHOLD_SEC}
-                        />
+                        {splitView ? (
+                          <SplitView360
+                            ref={playerRef}
+                            videoUrl={cameraVideo?.public_url ?? (videoId ? getVideoUrl(videoId) : null)}
+                            hideBigPlayButton={!videoId}
+                            isAdmin={isAdmin}
+                            is360={
+                              cameraVideo
+                                ? true
+                                : (videoList.find((v) => (v.id ?? v.videoId) === videoId)?.is360 ?? true)
+                            }
+                            remoteTime={remoteTime}
+                            remotePlaying={remotePlaying}
+                            remoteSpherical={remoteSpherical}
+                            onPlay={emitPlay}
+                            onPause={emitPause}
+                            onSeek={emitSeek}
+                            onSphericalChange={emitSpherical}
+                            syncThresholdSec={SYNC_THRESHOLD_SEC}
+                          />
+                        ) : (
+                          <Custom360Player
+                            ref={playerRef}
+                            videoUrl={cameraVideo?.public_url ?? (videoId ? getVideoUrl(videoId) : null)}
+                            hideBigPlayButton={!videoId}
+                            isAdmin={isAdmin}
+                            is360={
+                              cameraVideo
+                                ? true
+                                : (videoList.find((v) => (v.id ?? v.videoId) === videoId)?.is360 ?? true)
+                            }
+                            remoteTime={remoteTime}
+                            remotePlaying={remotePlaying}
+                            remoteSpherical={remoteSpherical}
+                            onPlay={emitPlay}
+                            onPause={emitPause}
+                            onSeek={emitSeek}
+                            onSphericalChange={emitSpherical}
+                            syncThresholdSec={SYNC_THRESHOLD_SEC}
+                          />
+                        )}
                         {!videoId && (
                           <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-light-muted text-sm">
                             {isAdmin ? (
@@ -572,23 +630,25 @@ export default function Room() {
                   )}
                 </section>
 
-                {/* Map section - 30% */}
-                <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-light-panel">
-                  <div className="flex items-center gap-2 px-4 py-2 border-b border-light-border shrink-0">
-                    <Map className="w-4 h-4 text-light-muted" />
-                    <span className="text-sm font-medium text-light-text">Map</span>
-                  </div>
-                  <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
-                    <MapPanel
-                      center={mapCenter}
-                      zoom={mapZoom}
-                      isAdmin={isAdmin}
-                      onUpdate={handleMapUpdate}
-                      gpsData={gpsData}
-                      currentPosition={currentPosition}
-                    />
-                  </div>
-                </section>
+                {/* Map section - 30% — hidden in split view */}
+                {!splitView && (
+                  <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-light-panel">
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-light-border shrink-0">
+                      <Map className="w-4 h-4 text-light-muted" />
+                      <span className="text-sm font-medium text-light-text">Map</span>
+                    </div>
+                    <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
+                      <MapPanel
+                        center={mapCenter}
+                        zoom={mapZoom}
+                        isAdmin={isAdmin}
+                        onUpdate={handleMapUpdate}
+                        gpsData={gpsData}
+                        currentPosition={currentPosition}
+                      />
+                    </div>
+                  </section>
+                )}
               </div>
             </div>
           )}

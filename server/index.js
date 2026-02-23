@@ -54,6 +54,7 @@ function getOrCreateRoom(roomId) {
       cameraVideo: null,
       gpsData: null,
       videoSharingEnabled: false,
+      splitView: false,
     });
   }
   return rooms.get(roomId);
@@ -92,6 +93,7 @@ io.on('connection', (socket) => {
       cameraVideo: room.cameraVideo,
       gpsData: room.gpsData,
       videoSharingEnabled: room.videoSharingEnabled,
+      splitView: room.splitView,
     });
 
     io.to(roomId).emit('users-update', {
@@ -191,6 +193,13 @@ io.on('connection', (socket) => {
     if (!room || room.adminId !== socket.id) return;
     room.videoSharingEnabled = enabled;
     io.to(roomId).emit('video-sharing-toggled', { enabled });
+  });
+
+  socket.on('split-view-toggle', ({ roomId, splitView }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.adminId !== socket.id) return;
+    room.splitView = !!splitView;
+    io.to(roomId).emit('split-view-toggled', { splitView: room.splitView });
   });
 
   socket.on('disconnect', () => {

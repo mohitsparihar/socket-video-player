@@ -33,7 +33,7 @@ function getVrInstance(player) {
       const c = children[i];
       if (c && c.controls3d && c.camera) return c;
     }
-  } catch (_) {}
+  } catch (_) { }
   return null;
 }
 
@@ -41,7 +41,9 @@ const Custom360Player = forwardRef(function Custom360Player(
   {
     videoUrl,
     isAdmin,
+    isSidePlayer = false,
     is360 = true,
+    showControls = true,
     hideBigPlayButton = false,
     remoteTime,
     remotePlaying,
@@ -57,6 +59,8 @@ const Custom360Player = forwardRef(function Custom360Player(
   const videoContainerRef = useRef(null);
   const playerRef = useRef(null);
   const [playerReady, setPlayerReady] = useState(false);
+  // Capture initial value — side players always pass showControls=false (stable)
+  const showControlsRef = useRef(showControls);
 
   const callbacksRef = useRef({ onPlay, onPause, onSeek, onSphericalChange });
   useEffect(() => {
@@ -82,18 +86,16 @@ const Custom360Player = forwardRef(function Custom360Player(
     videoContainerRef.current.appendChild(videoElement);
 
     const player = videojs(videoElement, {
-      controls: true,
+      controls: showControlsRef.current,
       fluid: true,
       preload: 'auto',
       aspectRatio: '16:9',
       techOrder: ['html5'],
       muted: true,
-      controlBar: {
-        volumePanel: true,
-        progressControl: true,
-        playToggle: true,
-        fullscreenToggle: true,
-      },
+      bigPlayButton: showControlsRef.current,
+      controlBar: showControlsRef.current
+        ? { volumePanel: true, progressControl: true, playToggle: true, fullscreenToggle: true }
+        : false,
     });
 
     playerRef.current = player;
@@ -168,7 +170,7 @@ const Custom360Player = forwardRef(function Custom360Player(
   // Sync time and play state for non-admin
   useEffect(() => {
     const player = playerRef.current;
-    if (!player || !playerReady || isAdmin) return;
+    if (!player || !playerReady || isAdmin || isSidePlayer) return;
 
     const current = player.currentTime();
     const diff = Math.abs(current - remoteTime);
@@ -178,7 +180,7 @@ const Custom360Player = forwardRef(function Custom360Player(
     }
 
     if (remotePlaying && player.paused()) {
-      player.play().catch(() => {});
+      player.play().catch(() => { });
     } else if (!remotePlaying && !player.paused()) {
       player.pause();
     }
@@ -247,7 +249,7 @@ const Custom360Player = forwardRef(function Custom360Player(
           lastSphericalEmittedRef.current = spherical;
           callbacksRef.current.onSphericalChange?.(spherical);
         }
-      } catch (_) {}
+      } catch (_) { }
     }, SPHERICAL_POLL_MS);
     return () => clearInterval(interval);
   }, [is360, isAdmin, onSphericalChange, playerReady]);
@@ -262,7 +264,7 @@ const Custom360Player = forwardRef(function Custom360Player(
           style={{
             pointerEvents: 'all',
             zIndex: 10,
-            bottom: '40px' // Leave space for video.js controls at bottom
+            bottom: showControls ? '40px' : '0px', // Leave space for video.js controls at bottom
           }}
           title="Only the host can control playback"
           aria-hidden="true"
