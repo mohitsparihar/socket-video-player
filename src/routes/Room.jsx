@@ -5,10 +5,11 @@ import Custom360Player from '../components/Custom360Player';
 import SplitView360 from '../components/SplitView360';
 import MapPanel from '../components/MapPanel';
 import VideoCallPanel from '../components/VideoCallPanel';
-import { ArrowLeft, Crown, Share2, Film, Map, PanelRightClose, PanelRightOpen, X, Columns3 } from 'lucide-react';
+import { ArrowLeft, Crown, Share2, Film, Map, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { getVideoUrl, getVideoListFromCameraApi, getGPSData, getGPSDataFromUrl, interpolateGPSPosition } from '../utils/video';
 
 const HEARTBEAT_INTERVAL_MS = 3000;
+const MAP_UPDATE_INTERVAL_MS = 150; // Smooth map movement during playback
 const SYNC_THRESHOLD_SEC = 2;
 
 export default function Room() {
@@ -40,12 +41,13 @@ export default function Room() {
   const [localTime, setLocalTime] = useState(0); // Track admin's local video time
   const [videoSharingEnabled, setVideoSharingEnabled] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [splitView, setSplitView] = useState(false);
+  const [splitView, setSplitView] = useState(true);
 
   const playerRef = useRef(null);
   const heartbeatRef = useRef(null);
   const lastSyncRef = useRef(0);
   const initialVideoAppliedRef = useRef(false);
+  const lastSphericalEmitRef = useRef(0);
 
   const userName = displayName || 'User';
 
@@ -92,6 +94,9 @@ export default function Room() {
   const emitSpherical = useCallback(
     (spherical) => {
       if (socket && isAdmin && roomId && spherical && Object.keys(spherical).length > 0) {
+        const now = Date.now();
+        if (now - lastSphericalEmitRef.current < 50) return; // throttle to ~20/s
+        lastSphericalEmitRef.current = now;
         socket.emit('spherical-update', { roomId, spherical });
       }
     },
@@ -205,6 +210,7 @@ export default function Room() {
       socket.off('heartbeat');
       socket.off('spherical-update');
       socket.off('video-sharing-toggled');
+      socket.off('split-view-toggled');
     };
   }, [socket, roomId, displayName, jitsiJoined]);
 
@@ -223,6 +229,23 @@ export default function Room() {
 
     return () => clearInterval(interval);
   }, [isAdmin, emitHeartbeat]);
+
+  // Update localTime frequently for smooth map movement during playback (admin only)
+  useEffect(() => {
+    if (!isAdmin || !playerRef.current) return;
+
+    const interval = setInterval(() => {
+      const player = playerRef.current?.getInternalPlayer?.();
+      if (player && typeof player.getCurrentTime === 'function') {
+        try {
+          const t = player.getCurrentTime();
+          setLocalTime(t);
+        } catch (_) { }
+      }
+    }, MAP_UPDATE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [isAdmin]);
 
   // Load video list from camera app API
   useEffect(() => {
@@ -410,6 +433,11 @@ export default function Room() {
     if (socket && isAdmin && roomId) {
       setVideoSharingEnabled(next);
       socket.emit('video-sharing-toggle', { roomId, enabled: next });
+      if (next) {
+        // Always open in split view
+        setSplitView(true);
+        socket.emit('split-view-toggle', { roomId, splitView: true });
+      }
     }
   }, [socket, isAdmin, roomId, showSidebar]);
 
@@ -508,24 +536,6 @@ export default function Room() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isAdmin && joined && videoSharingEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !splitView;
-                        setSplitView(next);
-                        socket?.emit('split-view-toggle', { roomId, splitView: next });
-                      }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-colors ${splitView
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-white border-light-border text-light-text hover:bg-light-surface'
-                        }`}
-                      title={splitView ? 'Switch to single view' : 'Switch to 3-panel split view (Left / Center / Right)'}
-                    >
-                      <Columns3 className="w-4 h-4" />
-                      {splitView ? 'Split View' : 'Split View'}
-                    </button>
-                  )}
                   {isAdmin && (
                     <button
                       type="button"
@@ -541,11 +551,8 @@ export default function Room() {
 
               {/* video | map — split view expands video to full width and hides map */}
               <div className="flex-1 min-h-0 flex overflow-hidden">
-                {/* Video section — 100% in split view, 70% otherwise */}
-                <section
-                  className={`min-w-0 flex flex-col overflow-hidden ${splitView ? 'w-full' : 'w-[70%] border-r border-light-border'
-                    }`}
-                >
+                {/* Video section — always 70% so map stays visible */}
+                <section className="w-[70%] min-w-0 flex flex-col overflow-hidden border-r border-light-border">
                   {videoSharingEnabled ? (
                     <>
                       <div className="flex items-center gap-2 px-4 py-3 border-b border-light-border shrink-0">
@@ -630,25 +637,23 @@ export default function Room() {
                   )}
                 </section>
 
-                {/* Map section - 30% — hidden in split view */}
-                {!splitView && (
-                  <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-light-panel">
-                    <div className="flex items-center gap-2 px-4 py-2 border-b border-light-border shrink-0">
-                      <Map className="w-4 h-4 text-light-muted" />
-                      <span className="text-sm font-medium text-light-text">Map</span>
-                    </div>
-                    <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
-                      <MapPanel
-                        center={mapCenter}
-                        zoom={mapZoom}
-                        isAdmin={isAdmin}
-                        onUpdate={handleMapUpdate}
-                        gpsData={gpsData}
-                        currentPosition={currentPosition}
-                      />
-                    </div>
-                  </section>
-                )}
+                {/* Map section - always 30% */}
+                <section className="w-[30%] min-w-0 flex flex-col overflow-hidden bg-light-panel">
+                  <div className="flex items-center gap-2 px-4 py-2 border-b border-light-border shrink-0">
+                    <Map className="w-4 h-4 text-light-muted" />
+                    <span className="text-sm font-medium text-light-text">Map</span>
+                  </div>
+                  <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
+                    <MapPanel
+                      center={mapCenter}
+                      zoom={mapZoom}
+                      isAdmin={isAdmin}
+                      onUpdate={handleMapUpdate}
+                      gpsData={gpsData}
+                      currentPosition={currentPosition}
+                    />
+                  </div>
+                </section>
               </div>
             </div>
           )}
